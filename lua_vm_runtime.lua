@@ -1,177 +1,276 @@
---==============================================================
+-- ============================================================
 -- KN4GHT LUAVM RUNTIME
--- Standalone Luau VM prototype
---==============================================================
+-- Runtime + bytecode test
+-- ============================================================
 
 local VM = {}
-
 VM.__index = VM
 
-function VM.new(constants, instructions)
+
+-- ============================================================
+-- CREATE VM
+-- ============================================================
+
+function VM.new()
     return setmetatable({
-        constants = constants or {},
-        instructions = instructions or {},
+        constants = {},
+        instructions = {},
         registers = {},
-        stack = {},
         pc = 1,
         running = false
     }, VM)
 end
 
+
+-- ============================================================
+-- LOAD BYTECODE
+-- ============================================================
+
+function VM:load(constants, instructions)
+    self.constants = constants or {}
+    self.instructions = instructions or {}
+    self.registers = {}
+    self.pc = 1
+end
+
+
+-- ============================================================
+-- EXECUTE
+-- ============================================================
+
 function VM:run()
     self.running = true
 
     while self.running do
-        local ins = self.instructions[self.pc]
 
-        if not ins then
+        local instruction =
+            self.instructions[self.pc]
+
+        if not instruction then
             break
         end
 
-        local op = ins[1]
+        local opcode = instruction[1]
 
-        if op == "LOADK" then
-            self.registers[ins[2]] =
-                self.constants[ins[3]]
 
-            self.pc += 1
+        -- LOAD CONSTANT
+        if opcode == "LOADK" then
 
-        elseif op == "MOVE" then
-            self.registers[ins[2]] =
-                self.registers[ins[3]]
+            local register =
+                instruction[2]
 
-            self.pc += 1
+            local constant =
+                instruction[3]
 
-        elseif op == "ADD" then
-            self.registers[ins[2]] =
-                self.registers[ins[3]] +
-                self.registers[ins[4]]
+            self.registers[register] =
+                self.constants[constant]
 
             self.pc += 1
 
-        elseif op == "SUB" then
-            self.registers[ins[2]] =
-                self.registers[ins[3]] -
-                self.registers[ins[4]]
+
+        -- MOVE
+        elseif opcode == "MOVE" then
+
+            self.registers[
+                instruction[2]
+            ] =
+                self.registers[
+                    instruction[3]
+                ]
 
             self.pc += 1
 
-        elseif op == "MUL" then
-            self.registers[ins[2]] =
-                self.registers[ins[3]] *
-                self.registers[ins[4]]
+
+        -- ADD
+        elseif opcode == "ADD" then
+
+            self.registers[
+                instruction[2]
+            ] =
+                self.registers[
+                    instruction[3]
+                ]
+                +
+                self.registers[
+                    instruction[4]
+                ]
 
             self.pc += 1
 
-        elseif op == "DIV" then
-            self.registers[ins[2]] =
-                self.registers[ins[3]] /
-                self.registers[ins[4]]
+
+        -- SUB
+        elseif opcode == "SUB" then
+
+            self.registers[
+                instruction[2]
+            ] =
+                self.registers[
+                    instruction[3]
+                ]
+                -
+                self.registers[
+                    instruction[4]
+                ]
 
             self.pc += 1
 
-        elseif op == "BAND" then
-            self.registers[ins[2]] =
+
+        -- MUL
+        elseif opcode == "MUL" then
+
+            self.registers[
+                instruction[2]
+            ] =
+                self.registers[
+                    instruction[3]
+                ]
+                *
+                self.registers[
+                    instruction[4]
+                ]
+
+            self.pc += 1
+
+
+        -- DIV
+        elseif opcode == "DIV" then
+
+            self.registers[
+                instruction[2]
+            ] =
+                self.registers[
+                    instruction[3]
+                ]
+                /
+                self.registers[
+                    instruction[4]
+                ]
+
+            self.pc += 1
+
+
+        -- BIT32 AND
+        elseif opcode == "BAND" then
+
+            self.registers[
+                instruction[2]
+            ] =
                 bit32.band(
-                    self.registers[ins[3]],
-                    self.registers[ins[4]]
+                    self.registers[
+                        instruction[3]
+                    ],
+                    self.registers[
+                        instruction[4]
+                    ]
                 )
 
             self.pc += 1
 
-        elseif op == "BOR" then
-            self.registers[ins[2]] =
+
+        -- BIT32 OR
+        elseif opcode == "BOR" then
+
+            self.registers[
+                instruction[2]
+            ] =
                 bit32.bor(
-                    self.registers[ins[3]],
-                    self.registers[ins[4]]
+                    self.registers[
+                        instruction[3]
+                    ],
+                    self.registers[
+                        instruction[4]
+                    ]
                 )
 
             self.pc += 1
 
-        elseif op == "BXOR" then
-            self.registers[ins[2]] =
+
+        -- BIT32 XOR
+        elseif opcode == "BXOR" then
+
+            self.registers[
+                instruction[2]
+            ] =
                 bit32.bxor(
-                    self.registers[ins[3]],
-                    self.registers[ins[4]]
+                    self.registers[
+                        instruction[3]
+                    ],
+                    self.registers[
+                        instruction[4]
+                    ]
                 )
 
             self.pc += 1
 
-        elseif op == "BNOT" then
-            self.registers[ins[2]] =
+
+        -- BIT32 NOT
+        elseif opcode == "BNOT" then
+
+            self.registers[
+                instruction[2]
+            ] =
                 bit32.bnot(
-                    self.registers[ins[3]]
+                    self.registers[
+                        instruction[3]
+                    ]
                 )
 
             self.pc += 1
 
-        elseif op == "LSHIFT" then
-            self.registers[ins[2]] =
-                bit32.lshift(
-                    self.registers[ins[3]],
-                    self.registers[ins[4]]
-                )
+
+        -- PRINT
+        elseif opcode == "PRINT" then
+
+            print(
+                self.registers[
+                    instruction[2]
+                ]
+            )
 
             self.pc += 1
 
-        elseif op == "RSHIFT" then
-            self.registers[ins[2]] =
-                bit32.rshift(
-                    self.registers[ins[3]],
-                    self.registers[ins[4]]
-                )
 
-            self.pc += 1
+        -- HALT
+        elseif opcode == "HALT" then
 
-        elseif op == "ARSHIFT" then
-            self.registers[ins[2]] =
-                bit32.arshift(
-                    self.registers[ins[3]],
-                    self.registers[ins[4]]
-                )
-
-            self.pc += 1
-
-        elseif op == "PRINT" then
-            print(self.registers[ins[2]])
-            self.pc += 1
-
-        elseif op == "HALT" then
             self.running = false
 
+
         else
+
             error(
-                "Unknown VM opcode: " ..
-                tostring(op) ..
-                " at instruction " ..
-                tostring(self.pc)
+                "Unknown opcode: "
+                .. tostring(opcode)
+                .. " at PC "
+                .. tostring(self.pc)
             )
+
         end
     end
 
     return self.registers
 end
 
---==============================================================
--- TEST PROGRAM
---==============================================================
 
-local constants = {
-    10,
-    20
-}
+-- ============================================================
+-- TEST
+-- ============================================================
 
-local instructions = {
-    {"LOADK", 0, 1},
-    {"LOADK", 1, 2},
-    {"ADD", 2, 0, 1},
-    {"PRINT", 2},
-    {"HALT"}
-}
+local vm = VM.new()
 
-local vm = VM.new(
-    constants,
-    instructions
+vm:load(
+    {
+        10,
+        20
+    },
+
+    {
+        {"LOADK", 0, 1},
+        {"LOADK", 1, 2},
+        {"ADD", 2, 0, 1},
+        {"PRINT", 2},
+        {"HALT"}
+    }
 )
 
 vm:run()
