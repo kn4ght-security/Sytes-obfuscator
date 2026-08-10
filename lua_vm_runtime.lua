@@ -1,388 +1,177 @@
--- ============================================================
--- KN4GHT VM
--- Luau-side VM runtime prototype
--- ============================================================
+--==============================================================
+-- KN4GHT LUAVM RUNTIME
+-- Standalone Luau VM prototype
+--==============================================================
 
 local VM = {}
 
 VM.__index = VM
 
-
--- ============================================================
--- CREATE VM
--- ============================================================
-
-function VM.new()
-    local self = setmetatable({}, VM)
-
-    self.registers = {}
-    self.stack = {}
-    self.constants = {}
-    self.instructions = {}
-
-    self.ip = 1
-    self.running = false
-
-    return self
+function VM.new(constants, instructions)
+    return setmetatable({
+        constants = constants or {},
+        instructions = instructions or {},
+        registers = {},
+        stack = {},
+        pc = 1,
+        running = false
+    }, VM)
 end
-
-
--- ============================================================
--- LOAD PROGRAM
--- ============================================================
-
-function VM:load(program)
-    assert(
-        type(program) == "table",
-        "VM: invalid program"
-    )
-
-    self.constants =
-        program.constants or {}
-
-    self.instructions =
-        program.instructions or {}
-
-    self.registers = {}
-    self.stack = {}
-
-    self.ip = 1
-    self.running = false
-end
-
-
--- ============================================================
--- EXECUTE ONE INSTRUCTION
--- ============================================================
-
-function VM:execute(instruction)
-
-    local op = instruction[1]
-
-
-    -- ========================================================
-    -- CONSTANT
-    -- ========================================================
-
-    if op == "LOADK" then
-
-        local destination = instruction[2]
-        local constant = instruction[3]
-
-        self.registers[destination] =
-            self.constants[constant]
-
-        self.ip += 1
-
-        return
-    end
-
-
-    -- ========================================================
-    -- MOVE
-    -- ========================================================
-
-    if op == "MOVE" then
-
-        local destination = instruction[2]
-        local source = instruction[3]
-
-        self.registers[destination] =
-            self.registers[source]
-
-        self.ip += 1
-
-        return
-    end
-
-
-    -- ========================================================
-    -- STACK
-    -- ========================================================
-
-    if op == "PUSH" then
-
-        local source = instruction[2]
-
-        self.stack[#self.stack + 1] =
-            self.registers[source]
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "POP" then
-
-        local destination = instruction[2]
-
-        self.registers[destination] =
-            table.remove(self.stack)
-
-        self.ip += 1
-
-        return
-    end
-
-
-    -- ========================================================
-    -- ARITHMETIC
-    -- ========================================================
-
-    if op == "ADD" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            self.registers[left] +
-            self.registers[right]
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "SUB" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            self.registers[left] -
-            self.registers[right]
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "MUL" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            self.registers[left] *
-            self.registers[right]
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "DIV" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            self.registers[left] /
-            self.registers[right]
-
-        self.ip += 1
-
-        return
-    end
-
-
-    -- ========================================================
-    -- BITWISE
-    -- ========================================================
-
-    if op == "BAND" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            bit32.band(
-                self.registers[left],
-                self.registers[right]
-            )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "BOR" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            bit32.bor(
-                self.registers[left],
-                self.registers[right]
-            )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "BXOR" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            bit32.bxor(
-                self.registers[left],
-                self.registers[right]
-            )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "BNOT" then
-
-        local destination = instruction[2]
-        local source = instruction[3]
-
-        self.registers[destination] =
-            bit32.bnot(
-                self.registers[source]
-            )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "LSHIFT" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            bit32.lshift(
-                self.registers[left],
-                self.registers[right]
-            )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "RSHIFT" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            bit32.rshift(
-                self.registers[left],
-                self.registers[right]
-            )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    if op == "ARSHIFT" then
-
-        local destination = instruction[2]
-        local left = instruction[3]
-        local right = instruction[4]
-
-        self.registers[destination] =
-            bit32.arshift(
-                self.registers[left],
-                self.registers[right]
-            )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    -- ========================================================
-    -- PRINT
-    -- ========================================================
-
-    if op == "PRINT" then
-
-        local source = instruction[2]
-
-        print(
-            self.registers[source]
-        )
-
-        self.ip += 1
-
-        return
-    end
-
-
-    -- ========================================================
-    -- HALT
-    -- ========================================================
-
-    if op == "HALT" then
-
-        self.running = false
-
-        return
-    end
-
-
-    error(
-        "KN4GHT VM: unknown opcode " ..
-        tostring(op) ..
-        " at instruction " ..
-        tostring(self.ip)
-    )
-end
-
-
--- ============================================================
--- RUN
--- ============================================================
 
 function VM:run()
-
     self.running = true
 
     while self.running do
+        local ins = self.instructions[self.pc]
 
-        local instruction =
-            self.instructions[self.ip]
-
-        if not instruction then
+        if not ins then
             break
         end
 
-        self:execute(instruction)
+        local op = ins[1]
+
+        if op == "LOADK" then
+            self.registers[ins[2]] =
+                self.constants[ins[3]]
+
+            self.pc += 1
+
+        elseif op == "MOVE" then
+            self.registers[ins[2]] =
+                self.registers[ins[3]]
+
+            self.pc += 1
+
+        elseif op == "ADD" then
+            self.registers[ins[2]] =
+                self.registers[ins[3]] +
+                self.registers[ins[4]]
+
+            self.pc += 1
+
+        elseif op == "SUB" then
+            self.registers[ins[2]] =
+                self.registers[ins[3]] -
+                self.registers[ins[4]]
+
+            self.pc += 1
+
+        elseif op == "MUL" then
+            self.registers[ins[2]] =
+                self.registers[ins[3]] *
+                self.registers[ins[4]]
+
+            self.pc += 1
+
+        elseif op == "DIV" then
+            self.registers[ins[2]] =
+                self.registers[ins[3]] /
+                self.registers[ins[4]]
+
+            self.pc += 1
+
+        elseif op == "BAND" then
+            self.registers[ins[2]] =
+                bit32.band(
+                    self.registers[ins[3]],
+                    self.registers[ins[4]]
+                )
+
+            self.pc += 1
+
+        elseif op == "BOR" then
+            self.registers[ins[2]] =
+                bit32.bor(
+                    self.registers[ins[3]],
+                    self.registers[ins[4]]
+                )
+
+            self.pc += 1
+
+        elseif op == "BXOR" then
+            self.registers[ins[2]] =
+                bit32.bxor(
+                    self.registers[ins[3]],
+                    self.registers[ins[4]]
+                )
+
+            self.pc += 1
+
+        elseif op == "BNOT" then
+            self.registers[ins[2]] =
+                bit32.bnot(
+                    self.registers[ins[3]]
+                )
+
+            self.pc += 1
+
+        elseif op == "LSHIFT" then
+            self.registers[ins[2]] =
+                bit32.lshift(
+                    self.registers[ins[3]],
+                    self.registers[ins[4]]
+                )
+
+            self.pc += 1
+
+        elseif op == "RSHIFT" then
+            self.registers[ins[2]] =
+                bit32.rshift(
+                    self.registers[ins[3]],
+                    self.registers[ins[4]]
+                )
+
+            self.pc += 1
+
+        elseif op == "ARSHIFT" then
+            self.registers[ins[2]] =
+                bit32.arshift(
+                    self.registers[ins[3]],
+                    self.registers[ins[4]]
+                )
+
+            self.pc += 1
+
+        elseif op == "PRINT" then
+            print(self.registers[ins[2]])
+            self.pc += 1
+
+        elseif op == "HALT" then
+            self.running = false
+
+        else
+            error(
+                "Unknown VM opcode: " ..
+                tostring(op) ..
+                " at instruction " ..
+                tostring(self.pc)
+            )
+        end
     end
 
     return self.registers
 end
 
+--==============================================================
+-- TEST PROGRAM
+--==============================================================
 
-return VM
+local constants = {
+    10,
+    20
+}
+
+local instructions = {
+    {"LOADK", 0, 1},
+    {"LOADK", 1, 2},
+    {"ADD", 2, 0, 1},
+    {"PRINT", 2},
+    {"HALT"}
+}
+
+local vm = VM.new(
+    constants,
+    instructions
+)
+
+vm:run()
