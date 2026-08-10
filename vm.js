@@ -1,16 +1,13 @@
 // ============================================================
 // SYTES OBFUSCATOR
-// vm.js - Part 1
+// vm.js
+// Macro/VM compiler foundation
 // ============================================================
 
 (function (global) {
     "use strict";
 
     const VERSION = "1.0.0";
-
-    // --------------------------------------------------------
-    // Macro aliases
-    // --------------------------------------------------------
 
     const MACRO_ALIASES = Object.freeze({
         LPH_OBFUSCATED: "MV_OBFUSCATED",
@@ -41,14 +38,8 @@
         "MV_COMPRESS"
     ]);
 
-    // --------------------------------------------------------
-    // Normalize a macro name
-    // --------------------------------------------------------
-
     function normalizeMacro(name) {
-        if (!name) {
-            return null;
-        }
+        if (!name) return null;
 
         if (
             Object.prototype.hasOwnProperty.call(
@@ -63,31 +54,19 @@
             return null;
         }
 
-        if (VALID_MACROS.has(name)) {
-            return name;
-        }
-
-        return name;
+        return VALID_MACROS.has(name)
+            ? name
+            : name;
     }
-
-    // --------------------------------------------------------
-    // Parse comment directives
-    //
-    // Examples:
-    // --!mv:vm
-    // --!mv:cff true true 10
-    // --!mv:omit
-    // --------------------------------------------------------
 
     function parseDirective(line) {
         if (typeof line !== "string") {
             return null;
         }
 
-        const match =
-            line.match(
-                /^\s*--!mv:([a-z_]+)(?:\s+(.*?))?\s*$/
-            );
+        const match = line.match(
+            /^\s*--!mv:([a-z_]+)(?:\s+(.*?))?\s*$/
+        );
 
         if (!match) {
             return null;
@@ -97,11 +76,11 @@
             "MV_" +
             match[1].toUpperCase();
 
-        const argumentText =
+        const text =
             match[2] || "";
 
         const args =
-            argumentText
+            text
                 .trim()
                 .split(/\s+/)
                 .filter(Boolean)
@@ -114,8 +93,12 @@
                         return false;
                     }
 
+                    if (value === "nil") {
+                        return null;
+                    }
+
                     if (
-                        /^-?\d+(?:\.\d+)?$/.test(
+                        /^-?(?:\d+\.?\d*|\.\d+)$/.test(
                             value
                         )
                     ) {
@@ -132,10 +115,6 @@
         };
     }
 
-    // --------------------------------------------------------
-    // Function information
-    // --------------------------------------------------------
-
     class FunctionInfo {
         constructor(options = {}) {
             this.name =
@@ -147,17 +126,11 @@
             this.macros = [];
 
             this.virtualize = false;
-
             this.controlFlowFlatten = false;
-
             this.mangleExpressions = false;
-
             this.controlFlowPercent = 0;
-
             this.encrypt = false;
-
             this.omit = false;
-
             this.inline = false;
         }
 
@@ -171,7 +144,7 @@
 
             this.macros.push({
                 name: macro,
-                args
+                args: args.slice()
             });
 
             switch (macro) {
@@ -208,10 +181,6 @@
         }
     }
 
-     // ============================================================
-    // VM Compiler Context
-    // ============================================================
-
     class VMCompilerContext {
         constructor(options = {}) {
             this.seed =
@@ -219,10 +188,8 @@
                 createSeed();
 
             this.functions = [];
-
-            this.metadata = {};
-
             this.instructions = [];
+            this.metadata = {};
         }
 
         addFunction(fn) {
@@ -237,10 +204,13 @@
             return fn;
         }
 
-        addInstruction(opcode, operands = []) {
+        addInstruction(
+            opcode,
+            operands = []
+        ) {
             this.instructions.push({
                 opcode,
-                operands
+                operands: operands.slice()
             });
 
             return this.instructions.length - 1;
@@ -253,7 +223,6 @@
         build(metadata = {}) {
             return {
                 version: VERSION,
-
                 seed: this.seed,
 
                 functions:
@@ -283,11 +252,27 @@
                             fn.inline,
 
                         macros:
-                            fn.macros
+                            fn.macros.map(
+                                macro => ({
+                                    name:
+                                        macro.name,
+
+                                    args:
+                                        macro.args.slice()
+                                })
+                            )
                     })),
 
                 instructions:
-                    this.instructions.slice(),
+                    this.instructions.map(
+                        instruction => ({
+                            opcode:
+                                instruction.opcode,
+
+                            operands:
+                                instruction.operands.slice()
+                        })
+                    ),
 
                 metadata: {
                     ...this.metadata,
@@ -297,9 +282,29 @@
         }
     }
 
-    // ============================================================
-    // Utility helpers
-    // ============================================================
+    const OPCODES = Object.freeze({
+        NOP: 0,
+        LOADK: 1,
+        MOVE: 2,
+        GETGLOBAL: 3,
+        SETGLOBAL: 4,
+        GETTABLE: 5,
+        SETTABLE: 6,
+        ADD: 7,
+        SUB: 8,
+        MUL: 9,
+        DIV: 10,
+        MOD: 11,
+        POW: 12,
+        EQ: 13,
+        LT: 14,
+        LE: 15,
+        JMP: 16,
+        TEST: 17,
+        CALL: 18,
+        RETURN: 19,
+        CLOSURE: 20
+    });
 
     function createSeed() {
         const chars =
@@ -345,424 +350,65 @@
         return result;
     }
 
-    function escapeString(value) {
-        return String(value)
-            .replace(/\\/g, "\\\\")
-            .replace(/"/g, '\\"')
-            .replace(/\r/g, "\\r")
-            .replace(/\n/g, "\\n")
-            .replace(/\t/g, "\\t");
-    }
-
-    function encodeString(value) {
-        const input = String(value);
-
-        let output = "";
-
-        for (let i = 0; i < input.length; i++) {
-            output +=
-                input.charCodeAt(i).toString(16)
-                    .padStart(2, "0");
-        }
-
-        return output;
-    }
-
-    // ============================================================
-    // Public VM object
-    // ============================================================
-
-    const Kn4ghtVM = {
-        VERSION,
-
-        MACRO_ALIASES,
-
-        VALID_MACROS,
-
-        normalizeMacro,
-
-        parseDirective,
-
-        FunctionInfo,
-
-        VMCompilerContext,
-
-        createSeed,
-
-        randomIdentifier,
-
-        escapeString,
-
-        encodeString
-    };
-
-    global.Kn4ghtVM = Kn4ghtVM;
-
-})(window);
-
-// ============================================================
-// SYTES OBFUSCATOR
-// vm.js - Part 3
-// VM instruction helpers
-// ============================================================
-
-(function (global) {
-    "use strict";
-
-    const VM = global.Kn4ghtVM;
-
-    if (!VM) {
-        throw new Error(
-            "Kn4ghtVM Part 1/2 must be loaded first."
-        );
-    }
-
-    const OPCODES = Object.freeze({
-        NOP: 0,
-        LOADK: 1,
-        MOVE: 2,
-        GETGLOBAL: 3,
-        SETGLOBAL: 4,
-        GETTABLE: 5,
-        SETTABLE: 6,
-        ADD: 7,
-        SUB: 8,
-        MUL: 9,
-        DIV: 10,
-        MOD: 11,
-        POW: 12,
-        EQ: 13,
-        LT: 14,
-        LE: 15,
-        JMP: 16,
-        TEST: 17,
-        CALL: 18,
-        RETURN: 19,
-        CLOSURE: 20
-    });
-
-    class Instruction {
-        constructor(opcode, operands = []) {
-            this.opcode = opcode;
-            this.operands = operands.slice();
-        }
-
-        toJSON() {
-            return {
-                opcode: this.opcode,
-                operands: this.operands.slice()
-            };
-        }
-    }
-
-    class InstructionBuilder {
-        constructor() {
-            this.instructions = [];
-        }
-
-        emit(opcode, ...operands) {
-            const instruction =
-                new Instruction(
-                    opcode,
-                    operands
-                );
-
-            this.instructions.push(
-                instruction
-            );
-
-            return this.instructions.length - 1;
-        }
-
-        patch(index, ...operands) {
-            if (
-                index < 0 ||
-                index >= this.instructions.length
-            ) {
-                throw new RangeError(
-                    "Invalid instruction index."
-                );
-            }
-
-            this.instructions[index].operands =
-                operands;
-
-            return this;
-        }
-
-        get length() {
-            return this.instructions.length;
-        }
-
-        build() {
-            return this.instructions.map(
-                instruction =>
-                    instruction.toJSON()
-            );
-        }
-    }
-
-    function createInstructionBuilder() {
-        return new InstructionBuilder();
-    }
-
-    function opcodeName(value) {
-        for (const key of Object.keys(OPCODES)) {
-            if (OPCODES[key] === value) {
-                return key;
-            }
-        }
-
-        return "UNKNOWN";
-    }
-
-    function encodeInstructions(instructions) {
-        return instructions.map(
-            instruction => ({
-                opcode: instruction.opcode,
-                operands:
-                    instruction.operands
-            })
-        );
-    }
-
-    VM.OPCODES = OPCODES;
-    VM.Instruction = Instruction;
-    VM.InstructionBuilder =
-        InstructionBuilder;
-    VM.createInstructionBuilder =
-        createInstructionBuilder;
-    VM.opcodeName =
-        opcodeName;
-    VM.encodeInstructions =
-        encodeInstructions;
-
-})(window);
-
-// ============================================================
-// SYTES OBFUSCATOR
-// vm.js - Part 4
-// Macro metadata + source transformation helpers
-// ============================================================
-
-(function (global) {
-    "use strict";
-
-    const VM = global.Kn4ghtVM;
-
-    if (!VM) {
-        throw new Error(
-            "Kn4ghtVM is not initialized."
-        );
-    }
-
     function parseMacroArguments(text) {
-        if (!text) {
+        if (!text) return [];
+
+        return text
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(value => {
+                if (value === "true") return true;
+                if (value === "false") return false;
+                if (value === "nil") return null;
+
+                if (
+                    /^-?(?:\d+\.?\d*|\.\d+)$/.test(
+                        value
+                    )
+                ) {
+                    return Number(value);
+                }
+
+                return value;
+            });
+    }
+
+    function collectDirectives(source) {
+        if (typeof source !== "string") {
             return [];
         }
 
+        const lines =
+            source.split(/\r?\n/);
+
         const result = [];
-        let current = "";
-        let quote = null;
-        let escaped = false;
 
-        for (let i = 0; i < text.length; i++) {
-            const char = text[i];
+        for (
+            let i = 0;
+            i < lines.length;
+            i++
+        ) {
+            const directive =
+                parseDirective(lines[i]);
 
-            if (escaped) {
-                current += char;
-                escaped = false;
-                continue;
-            }
+            if (!directive) continue;
 
-            if (char === "\\") {
-                current += char;
-                escaped = true;
-                continue;
-            }
-
-            if (quote) {
-                current += char;
-
-                if (char === quote) {
-                    quote = null;
-                }
-
-                continue;
-            }
-
-            if (
-                char === '"' ||
-                char === "'"
-            ) {
-                quote = char;
-                current += char;
-                continue;
-            }
-
-            if (/\s/.test(char)) {
-                if (current.trim()) {
-                    result.push(
-                        convertMacroArgument(
-                            current.trim()
-                        )
-                    );
-
-                    current = "";
-                }
-
-                continue;
-            }
-
-            current += char;
-        }
-
-        if (current.trim()) {
-            result.push(
-                convertMacroArgument(
-                    current.trim()
-                )
-            );
+            result.push({
+                name: directive.name,
+                args: directive.args,
+                line: i + 1,
+                raw: lines[i]
+            });
         }
 
         return result;
     }
 
-    function convertMacroArgument(value) {
-        if (value === "true") {
-            return true;
-        }
-
-        if (value === "false") {
-            return false;
-        }
-
-        if (value === "nil") {
-            return null;
-        }
-
-        if (
-            /^-?(?:\d+\.?\d*|\.\d+)$/.test(
-                value
-            )
-        ) {
-            return Number(value);
-        }
-
-        return value;
-    }
-
-    function collectDirectives(source) {
-        const directives = [];
-        const lines =
-            source.split(/\r?\n/);
-
-        for (
-            let index = 0;
-            index < lines.length;
-            index++
-        ) {
-            const parsed =
-                VM.parseDirective(
-                    lines[index]
-                );
-
-            if (!parsed) {
-                continue;
-            }
-
-            directives.push({
-                name: parsed.name,
-                args: parsed.args,
-                line: index + 1,
-                raw: lines[index]
-            });
-        }
-
-        return directives;
-    }
-
-    function hasDirective(
-        directives,
-        name,
-        line
+    function getLineNumber(
+        source,
+        index
     ) {
-        return directives.some(
-            directive =>
-                directive.name === name &&
-                (
-                    line === undefined ||
-                    directive.line === line
-                )
-        );
-    }
-
-    function getDirective(
-        directives,
-        name,
-        line
-    ) {
-        return directives.find(
-            directive =>
-                directive.name === name &&
-                (
-                    line === undefined ||
-                    directive.line === line
-                )
-        ) || null;
-    }
-
-    function createMacroMetadata(
-        directives
-    ) {
-        return directives.map(
-               // ============================================================
-    // Macro aliases and compatibility helpers
-    // ============================================================
-
-    function isMacro(name) {
-        if (!name) {
-            return false;
-        }
-
-        const normalized =
-            VM.normalizeMacro(name);
-
-        return (
-            normalized !== null &&
-            (
-                VM.VALID_MACROS.has(normalized) ||
-                VM.MACRO_ALIASES[name] !== undefined
-            )
-        );
-    }
-
-    function isIgnoredMacro(name) {
-        return VM.IGNORED_MACROS
-            ? VM.IGNORED_MACROS.has(name)
-            : (
-                name === "LPH_ENCNUM" ||
-                name === "LPH_JIT" ||
-                name === "LPH_NO_UPVALUES"
-            );
-    }
-
-    function getMacroName(name) {
-        return VM.normalizeMacro(name);
-    }
-
-    // ------------------------------------------------------------
-    // Simple source metadata
-    // ------------------------------------------------------------
-
-    function getLineNumber(source, index) {
-        if (
-            typeof source !== "string" ||
-            typeof index !== "number"
-        ) {
-            return 1;
-        }
-
         let line = 1;
 
         for (
@@ -799,23 +445,46 @@
         };
     }
 
-    // ------------------------------------------------------------
-    // Expose helpers
-    // ------------------------------------------------------------
+    function createCompilerContext(
+        options = {}
+    ) {
+        const context =
+            new VMCompilerContext(options);
 
-    VM.isMacro =
-        isMacro;
+        context.setMetadata(
+            "compiler",
+            "Sytes"
+        );
 
-    VM.isIgnoredMacro =
-        isIgnoredMacro;
+        context.setMetadata(
+            "version",
+            VERSION
+        );
 
-    VM.getMacroName =
-        getMacroName;
+        return context;
+    }
 
-    VM.getLineNumber =
-        getLineNumber;
+    global.Kn4ghtVM = {
+        VERSION,
 
-    VM.getSourceInfo =
-        getSourceInfo;
+        MACRO_ALIASES,
+        IGNORED_MACROS,
+        VALID_MACROS,
+        OPCODES,
+
+        normalizeMacro,
+        parseDirective,
+        parseMacroArguments,
+        collectDirectives,
+
+        FunctionInfo,
+        VMCompilerContext,
+
+        createCompilerContext,
+        createSeed,
+        randomIdentifier,
+        getLineNumber,
+        getSourceInfo
+    };
 
 })(window);
