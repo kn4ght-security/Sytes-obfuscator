@@ -1,90 +1,246 @@
 "use strict";
 
-const sourceCode = document.getElementById("sourceCode");
-const outputCode = document.getElementById("outputCode");
+const source = document.getElementById("source");
+const output = document.getElementById("output");
+
+const sourceInfo = document.getElementById("sourceInfo");
+const outputInfo = document.getElementById("outputInfo");
+
+const status = document.getElementById("status");
 
 const fileInput = document.getElementById("fileInput");
 
-const obfuscateBtn = document.getElementById("obfuscateBtn");
-const clearBtn = document.getElementById("clearBtn");
-const resetBtn = document.getElementById("resetBtn");
-
-const copyBtn = document.getElementById("copyBtn");
-const downloadBtn = document.getElementById("downloadBtn");
-
-const inputSize = document.getElementById("inputSize");
-const outputSize = document.getElementById("outputSize");
-
-const statusBox = document.getElementById("status");
-const buttonText = document.getElementById("buttonText");
-
-const renameIdentifiers =
-    document.getElementById("renameIdentifiers");
-
-const encodeStrings =
-    document.getElementById("encodeStrings");
+const clearButton = document.getElementById("clearButton");
+const copyButton = document.getElementById("copyButton");
+const downloadButton = document.getElementById("downloadButton");
+const obfuscateButton = document.getElementById("obfuscateButton");
 
 const removeComments =
     document.getElementById("removeComments");
+
+const renameLocals =
+    document.getElementById("renameLocals");
+
+const encodeStrings =
+    document.getElementById("encodeStrings");
 
 const minify =
     document.getElementById("minify");
 
 
-// --------------------------------------------------
-// UI
-// --------------------------------------------------
+// =====================================================
+// UI HELPERS
+// =====================================================
 
-function updateInputSize() {
-    inputSize.textContent =
-        `${sourceCode.value.length.toLocaleString()} characters`;
+function updateInfo() {
+    sourceInfo.textContent =
+        `${source.value.length.toLocaleString()} characters`;
+
+    outputInfo.textContent =
+        `${output.value.length.toLocaleString()} characters`;
 }
 
-function updateOutputSize() {
-    outputSize.textContent =
-        `${outputCode.value.length.toLocaleString()} characters`;
-}
 
 function setStatus(message, type = "") {
-    statusBox.textContent = message;
-    statusBox.className = "status";
+    status.textContent = message;
+    status.className = "status";
 
     if (type) {
-        statusBox.classList.add(type);
+        status.classList.add(type);
     }
 }
 
 
-// --------------------------------------------------
-// Random names
-// --------------------------------------------------
+// =====================================================
+// LEXER
+//
+// This protects strings/comments while transformations
+// are being performed. It is deliberately conservative.
+// =====================================================
 
-function randomIdentifier(index) {
-    const alphabet =
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+function tokenizeLua(code) {
+    const tokens = [];
 
-    let result = "_";
+    let i = 0;
 
-    let seed = index * 7919 + 17;
+    while (i < code.length) {
 
-    for (let i = 0; i < 7; i++) {
-        seed =
-            (seed * 1664525 + 1013904223) >>> 0;
+        const char = code[i];
 
-        result += alphabet[
-            seed % alphabet.length
-        ];
+        // ---------------------------------------------
+        // Whitespace
+        // ---------------------------------------------
+
+        if (/\s/.test(char)) {
+
+            let start = i;
+
+            while (
+                i < code.length &&
+                /\s/.test(code[i])
+            ) {
+                i++;
+            }
+
+            tokens.push({
+                type: "whitespace",
+                value: code.slice(start, i)
+            });
+
+            continue;
+        }
+
+
+        // ---------------------------------------------
+        // Long comments / strings
+        // ---------------------------------------------
+
+        if (
+            code.startsWith("[[", i) ||
+            code.startsWith("--[[", i)
+        ) {
+
+            const isComment =
+                code.startsWith("--[[", i);
+
+            const start = i;
+
+            const searchStart =
+                isComment ? i + 4 : i + 2;
+
+            const end =
+                code.indexOf("]]", searchStart);
+
+            if (end !== -1) {
+
+                i = end + 2;
+
+                tokens.push({
+                    type: isComment
+                        ? "comment"
+                        : "string",
+
+                    value:
+                        code.slice(start, i)
+                });
+
+                continue;
+            }
+        }
+
+
+        // ---------------------------------------------
+        // Short strings
+        // ---------------------------------------------
+
+        if (char === "'" || char === '"') {
+
+            const quote = char;
+
+            const start = i;
+
+            i++;
+
+            while (i < code.length) {
+
+                if (code[i] === "\\") {
+                    i += 2;
+                    continue;
+                }
+
+                if (code[i] === quote) {
+                    i++;
+                    break;
+                }
+
+                i++;
+            }
+
+            tokens.push({
+                type: "string",
+                value: code.slice(start, i)
+            });
+
+            continue;
+        }
+
+
+        // ---------------------------------------------
+        // Single-line comments
+        // ---------------------------------------------
+
+        if (
+            char === "-" &&
+            code[i + 1] === "-"
+        ) {
+
+            const start = i;
+
+            while (
+                i < code.length &&
+                code[i] !== "\n"
+            ) {
+                i++;
+            }
+
+            tokens.push({
+                type: "comment",
+                value: code.slice(start, i)
+            });
+
+            continue;
+        }
+
+
+        // ---------------------------------------------
+        // Identifier
+        // ---------------------------------------------
+
+        if (
+            /[A-Za-z_]/.test(char)
+        ) {
+
+            const start = i;
+
+            i++;
+
+            while (
+                i < code.length &&
+                /[A-Za-z0-9_]/.test(code[i])
+            ) {
+                i++;
+            }
+
+            tokens.push({
+                type: "identifier",
+                value: code.slice(start, i)
+            });
+
+            continue;
+        }
+
+
+        // ---------------------------------------------
+        // Everything else
+        // ---------------------------------------------
+
+        tokens.push({
+            type: "symbol",
+            value: char
+        });
+
+        i++;
     }
 
-    return result;
+    return tokens;
 }
 
 
-// --------------------------------------------------
-// Lua keywords
-// --------------------------------------------------
+// =====================================================
+// LUA KEYWORDS / GLOBALS
+// =====================================================
 
-const luaKeywords = new Set([
+const keywords = new Set([
     "and",
     "break",
     "do",
@@ -110,30 +266,15 @@ const luaKeywords = new Set([
 ]);
 
 
-// --------------------------------------------------
-// Built-in globals
-// --------------------------------------------------
-
-const protectedGlobals = new Set([
+const protectedNames = new Set([
     "assert",
-    "collectgarbage",
-    "dofile",
     "error",
-    "getmetatable",
     "ipairs",
-    "load",
-    "loadfile",
-    "next",
     "pairs",
+    "next",
     "pcall",
     "print",
-    "rawequal",
-    "rawget",
-    "rawlen",
-    "rawset",
-    "require",
     "select",
-    "setmetatable",
     "tonumber",
     "tostring",
     "type",
@@ -153,291 +294,486 @@ const protectedGlobals = new Set([
     "game",
     "workspace",
     "script",
-    "shared",
-
-    "true",
-    "false",
-    "nil"
+    "shared"
 ]);
 
 
-// --------------------------------------------------
-// Remove comments safely enough for normal source
-// --------------------------------------------------
+// =====================================================
+// RANDOM IDENTIFIER
+// =====================================================
 
-function stripComments(code) {
+function generatedName(index) {
 
-    // Long comments
-    code = code.replace(
-        /--\[(=*)\[[\s\S]*?\]\1\]/g,
-        ""
-    );
+    const chars =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    // Single-line comments
-    code = code.replace(
-        /--[^\n\r]*/g,
-        ""
-    );
+    let seed =
+        (index + 1) * 2654435761 >>> 0;
 
-    return code;
+    let name = "_v";
+
+    for (let i = 0; i < 6; i++) {
+
+        seed =
+            (seed * 1664525 + 1013904223) >>> 0;
+
+        name +=
+            chars[seed % chars.length];
+    }
+
+    return name;
 }
 
 
-// --------------------------------------------------
-// String encoding
-// --------------------------------------------------
+// =====================================================
+// STRING ENCODING
+//
+// Converts:
+// "hello"
+// into:
+// "\104\101\108\108\111"
+//
+// This preserves the actual string value in Lua.
+// =====================================================
 
-function encodeLuaStrings(code) {
+function encodeString(token) {
 
-    return code.replace(
-        /(["'])(.*?)\1/g,
-        function (_, quote, value) {
+    const quote = token.value[0];
 
-            // Don't transform empty strings
-            if (!value.length) {
-                return quote + quote;
+    if (
+        quote !== "'" &&
+        quote !== '"'
+    ) {
+        return token.value;
+    }
+
+
+    const inner =
+        token.value.slice(
+            1,
+            -1
+        );
+
+
+    let result = "";
+
+
+    for (let i = 0; i < inner.length; i++) {
+
+        const char = inner[i];
+
+
+        // Preserve existing escapes.
+        if (char === "\\") {
+
+            if (i + 1 < inner.length) {
+                result +=
+                    "\\" + inner[i + 1];
+
+                i++;
+
+                continue;
             }
-
-            let bytes = [];
-
-            for (let i = 0; i < value.length; i++) {
-                bytes.push(
-                    value.charCodeAt(i)
-                );
-            }
-
-            // Lua-compatible numeric string construction
-            const parts = bytes.map(
-                byte => "\\" + byte
-            );
-
-            return '"' + parts.join("") + '"';
         }
-    );
-}
 
 
-// --------------------------------------------------
-// Find local identifiers
-// --------------------------------------------------
+        const code =
+            inner.charCodeAt(i);
 
-function collectIdentifiers(code) {
 
-    const identifiers = new Set();
-
-    // local variable declarations
-    const localPattern =
-        /\blocal\s+([A-Za-z_][A-Za-z0-9_]*)/g;
-
-    let match;
-
-    while ((match = localPattern.exec(code))) {
-
-        const name = match[1];
-
+        // Keep normal printable characters readable
+        // only when safe.
         if (
-            !luaKeywords.has(name) &&
-            !protectedGlobals.has(name)
+            code >= 32 &&
+            code <= 126 &&
+            char !== '"'
         ) {
-            identifiers.add(name);
+            result += char;
+        } else {
+            result +=
+                "\\" + code;
         }
     }
 
 
-    // local function declarations
-    const localFunctionPattern =
-        /\blocal\s+function\s+([A-Za-z_][A-Za-z0-9_]*)/g;
-
-    while ((match = localFunctionPattern.exec(code))) {
-
-        const name = match[1];
-
-        if (
-            !luaKeywords.has(name) &&
-            !protectedGlobals.has(name)
-        ) {
-            identifiers.add(name);
-        }
-    }
-
-
-    return [...identifiers];
+    return `"${result}"`;
 }
 
 
-// --------------------------------------------------
-// Rename identifiers
-// --------------------------------------------------
+// =====================================================
+// REMOVE COMMENTS
+// =====================================================
 
-function renameLocalIdentifiers(code) {
+function removeCommentsFromTokens(tokens) {
 
-    const identifiers =
-        collectIdentifiers(code);
+    return tokens.filter(
+        token =>
+            token.type !== "comment"
+    );
+}
+
+
+// =====================================================
+// COLLECT SIMPLE LOCAL VARIABLES
+//
+// Handles examples such as:
+//
+// local foo
+// local foo = 123
+// local foo, bar = 1, 2
+//
+// It intentionally does NOT rename arbitrary globals.
+// =====================================================
+
+function collectLocalNames(tokens) {
+
+    const names = new Set();
+
+    for (let i = 0; i < tokens.length; i++) {
+
+        const token = tokens[i];
+
+        if (
+            token.type !== "identifier" ||
+            token.value !== "local"
+        ) {
+            continue;
+        }
+
+
+        let j = i + 1;
+
+
+        // local function name
+        if (
+            tokens[j] &&
+            tokens[j].type === "identifier" &&
+            tokens[j].value === "function"
+        ) {
+
+            j++;
+
+            if (
+                tokens[j] &&
+                tokens[j].type === "identifier"
+            ) {
+                const name =
+                    tokens[j].value;
+
+                if (
+                    !keywords.has(name) &&
+                    !protectedNames.has(name)
+                ) {
+                    names.add(name);
+                }
+            }
+
+            continue;
+        }
+
+
+        // local a, b, c = ...
+        while (j < tokens.length) {
+
+            const current =
+                tokens[j];
+
+
+            if (
+                current.type === "identifier" &&
+                !keywords.has(current.value) &&
+                !protectedNames.has(current.value)
+            ) {
+
+                names.add(current.value);
+
+                j++;
+
+                continue;
+            }
+
+
+            if (
+                current.type === "symbol" &&
+                current.value === ","
+            ) {
+                j++;
+                continue;
+            }
+
+
+            break;
+        }
+    }
+
+    return [...names];
+}
+
+
+// =====================================================
+// RENAME LOCAL REFERENCES
+// =====================================================
+
+function renameLocalsInTokens(tokens) {
+
+    const localNames =
+        collectLocalNames(tokens);
 
     const mapping = new Map();
 
-    identifiers.forEach(
+
+    localNames.forEach(
         (name, index) => {
+
             mapping.set(
                 name,
-                randomIdentifier(index)
+                generatedName(index)
             );
         }
     );
 
 
-    for (const [oldName, newName] of mapping) {
-
-        const pattern =
-            new RegExp(
-                "\\b" +
-                oldName.replace(
-                    /[.*+?^${}()|[\]\\]/g,
-                    "\\$&"
-                ) +
-                "\\b",
-                "g"
-            );
-
-        code = code.replace(
-            pattern,
-            newName
-        );
+    if (mapping.size === 0) {
+        return tokens;
     }
 
 
-    return code;
+    return tokens.map(token => {
+
+        if (
+            token.type === "identifier" &&
+            mapping.has(token.value)
+        ) {
+
+            return {
+                ...token,
+                value:
+                    mapping.get(token.value)
+            };
+        }
+
+        return token;
+    });
 }
 
 
-// --------------------------------------------------
-// Basic whitespace minification
-// --------------------------------------------------
+// =====================================================
+// MINIFICATION
+//
+// We don't remove every space because Lua syntax can
+// depend on token boundaries.
+// =====================================================
 
-function minifyLua(code) {
+function minifyTokens(tokens) {
 
-    code = code
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n\s*\n/g, "\n")
-        .replace(/^\s+|\s+$/g, "");
+    const output = [];
 
-    return code;
+    for (let i = 0; i < tokens.length; i++) {
+
+        const current =
+            tokens[i];
+
+
+        if (
+            current.type === "whitespace"
+        ) {
+
+            const previous =
+                output[output.length - 1];
+
+            const next =
+                tokens[i + 1];
+
+
+            if (
+                previous &&
+                next &&
+                (
+                    (
+                        (
+                            previous.type === "identifier" ||
+                            previous.type === "number"
+                        ) &&
+                        (
+                            next.type === "identifier" ||
+                            next.type === "number"
+                        )
+                    )
+                )
+            ) {
+
+                output.push({
+                    type: "whitespace",
+                    value: " "
+                });
+            }
+
+            continue;
+        }
+
+
+        output.push(current);
+    }
+
+
+    return output;
 }
 
 
-// --------------------------------------------------
-// Main obfuscator
-// --------------------------------------------------
+// =====================================================
+// RENDER TOKENS
+// =====================================================
 
-function obfuscate(code) {
+function renderTokens(tokens) {
+
+    return tokens
+        .map(token => token.value)
+        .join("");
+}
+
+
+// =====================================================
+// MAIN OBFUSCATOR
+// =====================================================
+
+function obfuscateLua(code) {
 
     if (!code.trim()) {
         throw new Error(
-            "Please enter some Lua/Luau code first."
+            "Paste Lua/Luau code first."
         );
     }
 
 
-    // Safety check
     if (code.length > 1000000) {
         throw new Error(
-            "The source code is too large."
+            "Source code is limited to 1 MB."
         );
     }
 
 
-    let result = code;
+    let tokens =
+        tokenizeLua(code);
 
 
     if (removeComments.checked) {
-        result = stripComments(result);
+
+        tokens =
+            removeCommentsFromTokens(tokens);
+    }
+
+
+    if (renameLocals.checked) {
+
+        tokens =
+            renameLocalsInTokens(tokens);
     }
 
 
     if (encodeStrings.checked) {
-        result = encodeLuaStrings(result);
-    }
 
+        tokens =
+            tokens.map(token => {
 
-    if (renameIdentifiers.checked) {
-        result = renameLocalIdentifiers(result);
+                if (
+                    token.type === "string"
+                ) {
+                    return {
+                        ...token,
+                        value:
+                            encodeString(token)
+                    };
+                }
+
+                return token;
+            });
     }
 
 
     if (minify.checked) {
-        result = minifyLua(result);
+
+        tokens =
+            minifyTokens(tokens);
     }
 
 
-    return result;
+    return renderTokens(tokens);
 }
 
 
-// --------------------------------------------------
-// Obfuscate button
-// --------------------------------------------------
+// =====================================================
+// OBFUSCATE BUTTON
+// =====================================================
 
-obfuscateBtn.addEventListener(
+obfuscateButton.addEventListener(
     "click",
     async () => {
 
         try {
 
-            buttonText.textContent =
+            obfuscateButton.disabled = true;
+
+            obfuscateButton.textContent =
                 "Processing...";
 
-            obfuscateBtn.disabled = true;
-
             setStatus(
-                "Protecting your code...",
+                "Processing source...",
                 "loading"
             );
 
 
-            // Small delay for UI feedback
+            // Gives the browser a chance to repaint.
             await new Promise(
-                resolve => setTimeout(resolve, 150)
+                resolve =>
+                    setTimeout(resolve, 50)
             );
 
 
             const result =
-                obfuscate(sourceCode.value);
+                obfuscateLua(
+                    source.value
+                );
 
 
-            outputCode.value = result;
+            output.value =
+                result;
 
-            updateOutputSize();
+
+            updateInfo();
 
 
             setStatus(
-                "Obfuscation completed successfully.",
+                "Obfuscation completed.",
                 "success"
             );
 
         } catch (error) {
 
-            outputCode.value = "";
+            output.value = "";
+
+            updateInfo();
+
 
             setStatus(
                 error.message ||
-                "Obfuscation failed.",
+                "Unable to process the source.",
                 "error"
             );
 
         } finally {
 
-            buttonText.textContent =
-                "Obfuscate Code";
+            obfuscateButton.disabled = false;
 
-            obfuscateBtn.disabled = false;
+            obfuscateButton.textContent =
+                "Obfuscate Code";
         }
     }
 );
 
 
-// --------------------------------------------------
-// File upload
-// --------------------------------------------------
+// =====================================================
+// FILE UPLOAD
+// =====================================================
 
 fileInput.addEventListener(
     "change",
@@ -446,25 +782,21 @@ fileInput.addEventListener(
         const file =
             event.target.files[0];
 
-        if (!file) return;
+        if (!file) {
+            return;
+        }
 
 
-        const validExtensions =
-            [".lua", ".luau", ".txt"];
-
-        const valid =
-            validExtensions.some(
-                ext =>
-                    file.name
-                        .toLowerCase()
-                        .endsWith(ext)
+        const allowed =
+            /\.(lua|luau|txt)$/i.test(
+                file.name
             );
 
 
-        if (!valid) {
+        if (!allowed) {
 
             setStatus(
-                "Please upload a .lua, .luau, or .txt file.",
+                "Only .lua, .luau, and .txt files are supported.",
                 "error"
             );
 
@@ -477,7 +809,7 @@ fileInput.addEventListener(
         if (file.size > 1000000) {
 
             setStatus(
-                "File is too large. Maximum size is 1 MB.",
+                "The file is larger than 1 MB.",
                 "error"
             );
 
@@ -493,13 +825,14 @@ fileInput.addEventListener(
 
         reader.onload = () => {
 
-            sourceCode.value =
-                reader.result;
+            source.value =
+                String(reader.result || "");
 
-            updateInputSize();
+            updateInfo();
+
 
             setStatus(
-                `${file.name} loaded successfully.`,
+                `${file.name} loaded.`,
                 "success"
             );
         };
@@ -508,7 +841,7 @@ fileInput.addEventListener(
         reader.onerror = () => {
 
             setStatus(
-                "Unable to read the file.",
+                "Failed to read the file.",
                 "error"
             );
         };
@@ -519,58 +852,35 @@ fileInput.addEventListener(
 );
 
 
-// --------------------------------------------------
-// Clear
-// --------------------------------------------------
+// =====================================================
+// CLEAR
+// =====================================================
 
-clearBtn.addEventListener(
+clearButton.addEventListener(
     "click",
     () => {
 
-        sourceCode.value = "";
-
-        outputCode.value = "";
+        source.value = "";
+        output.value = "";
 
         fileInput.value = "";
 
-        updateInputSize();
-        updateOutputSize();
+        updateInfo();
 
         setStatus("");
     }
 );
 
 
-// --------------------------------------------------
-// Reset settings
-// --------------------------------------------------
+// =====================================================
+// COPY
+// =====================================================
 
-resetBtn.addEventListener(
-    "click",
-    () => {
-
-        renameIdentifiers.checked = true;
-        encodeStrings.checked = true;
-        removeComments.checked = true;
-        minify.checked = false;
-
-        setStatus(
-            "Protection settings reset.",
-            "success"
-        );
-    }
-);
-
-
-// --------------------------------------------------
-// Copy output
-// --------------------------------------------------
-
-copyBtn.addEventListener(
+copyButton.addEventListener(
     "click",
     async () => {
 
-        if (!outputCode.value) {
+        if (!output.value) {
 
             setStatus(
                 "There is no output to copy.",
@@ -584,22 +894,23 @@ copyBtn.addEventListener(
         try {
 
             await navigator.clipboard.writeText(
-                outputCode.value
+                output.value
             );
 
             setStatus(
-                "Protected code copied to clipboard.",
+                "Output copied.",
                 "success"
             );
 
         } catch {
 
-            outputCode.select();
+            output.focus();
+            output.select();
 
             document.execCommand("copy");
 
             setStatus(
-                "Protected code copied.",
+                "Output copied.",
                 "success"
             );
         }
@@ -607,15 +918,15 @@ copyBtn.addEventListener(
 );
 
 
-// --------------------------------------------------
-// Download
-// --------------------------------------------------
+// =====================================================
+// DOWNLOAD
+// =====================================================
 
-downloadBtn.addEventListener(
+downloadButton.addEventListener(
     "click",
     () => {
 
-        if (!outputCode.value) {
+        if (!output.value) {
 
             setStatus(
                 "There is no output to download.",
@@ -628,9 +939,10 @@ downloadBtn.addEventListener(
 
         const blob =
             new Blob(
-                [outputCode.value],
+                [output.value],
                 {
-                    type: "text/plain;charset=utf-8"
+                    type:
+                        "text/plain;charset=utf-8"
                 }
             );
 
@@ -642,10 +954,11 @@ downloadBtn.addEventListener(
         const link =
             document.createElement("a");
 
+
         link.href = url;
 
         link.download =
-            "luashield-protected.lua";
+            "luaveil-protected.lua";
 
 
         document.body.appendChild(link);
@@ -654,26 +967,31 @@ downloadBtn.addEventListener(
 
         link.remove();
 
+
         URL.revokeObjectURL(url);
 
 
         setStatus(
-            "Protected file downloaded.",
+            "Protected Lua file downloaded.",
             "success"
         );
     }
 );
 
 
-// --------------------------------------------------
-// Input statistics
-// --------------------------------------------------
+// =====================================================
+// LIVE CHARACTER COUNTER
+// =====================================================
 
-sourceCode.addEventListener(
+source.addEventListener(
     "input",
-    updateInputSize
+    updateInfo
 );
 
 
-updateInputSize();
-updateOutputSize();
+// =====================================================
+// INITIALIZE
+// =====================================================
+
+updateInfo();
+setStatus("");
