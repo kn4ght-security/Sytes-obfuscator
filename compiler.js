@@ -1,567 +1,787 @@
 // ============================================================
-// KN4GHT VM COMPILER
-// Luau VM bytecode generator
+// KN4GHT SYTES OBFUSCATOR
+// compiler.js - Part 1
 // ============================================================
 
-class Kn4ghtCompiler {
+(function (global) {
+    "use strict";
 
-    constructor() {
-        this.constants = [];
-        this.instructions = [];
-        this.registerCount = 0;
-    }
+    const VM = global.Kn4ghtVM;
 
-
-    // ========================================================
-    // CONSTANTS
-    // ========================================================
-
-    addConstant(value) {
-
-        const existing =
-            this.constants.indexOf(value);
-
-        if (existing !== -1) {
-            return existing;
-        }
-
-        this.constants.push(value);
-
-        // VM uses 1-based constant indexes
-        return this.constants.length;
-    }
-
-
-    // ========================================================
-    // REGISTERS
-    // ========================================================
-
-    newRegister() {
-
-        const register =
-            this.registerCount;
-
-        this.registerCount++;
-
-        return register;
-    }
-
-
-    // ========================================================
-    // EMIT
-    // ========================================================
-
-    emit(op, ...args) {
-
-        this.instructions.push([
-            op,
-            ...args
-        ]);
-    }
-
-
-    // ========================================================
-    // LOAD NUMBER
-    // ========================================================
-
-    compileNumber(value) {
-
-        const register =
-            this.newRegister();
-
-        const constant =
-            this.addConstant(
-                Number(value)
-            );
-
-        this.emit(
-            "LOADK",
-            register,
-            constant
-        );
-
-        return register;
-    }
-
-
-    // ========================================================
-    // LOAD STRING
-    // ========================================================
-
-    compileString(value) {
-
-        const register =
-            this.newRegister();
-
-        const constant =
-            this.addConstant(value);
-
-        this.emit(
-            "LOADK",
-            register,
-            constant
-        );
-
-        return register;
-    }
-
-
-    // ========================================================
-    // ARITHMETIC
-    // ========================================================
-
-    compileBinary(
-        operator,
-        left,
-        right
-    ) {
-
-        const operations = {
-
-            "+": "ADD",
-            "-": "SUB",
-            "*": "MUL",
-            "/": "DIV"
-
-        };
-
-        const opcode =
-            operations[operator];
-
-        if (!opcode) {
-
-            throw new Error(
-                "Unsupported operator: " +
-                operator
-            );
-        }
-
-        const destination =
-            this.newRegister();
-
-        this.emit(
-            opcode,
-            destination,
-            left,
-            right
-        );
-
-        return destination;
-    }
-
-
-    // ========================================================
-    // BIT32
-    // ========================================================
-
-    compileBit32(
-        operation,
-        left,
-        right
-    ) {
-
-        const operations = {
-
-            band: "BAND",
-            bor: "BOR",
-            bxor: "BXOR",
-            lshift: "LSHIFT",
-            rshift: "RSHIFT",
-            arshift: "ARSHIFT"
-
-        };
-
-        const opcode =
-            operations[
-                operation.toLowerCase()
-            ];
-
-        if (!opcode) {
-
-            throw new Error(
-                "Unknown bit32 operation: " +
-                operation
-            );
-        }
-
-        const destination =
-            this.newRegister();
-
-        this.emit(
-            opcode,
-            destination,
-            left,
-            right
-        );
-
-        return destination;
-    }
-
-
-    compileBit32Not(source) {
-
-        const destination =
-            this.newRegister();
-
-        this.emit(
-            "BNOT",
-            destination,
-            source
-        );
-
-        return destination;
-    }
-
-
-    // ========================================================
-    // PRINT
-    // ========================================================
-
-    print(register) {
-
-        this.emit(
-            "PRINT",
-            register
-        );
-    }
-
-
-    // ========================================================
-    // SIMPLE TEST EXPRESSION
-    // ========================================================
-
-    compileExpression(expression) {
-
-        const tokens =
-            this.tokenize(expression);
-
-        if (tokens.length === 0) {
-
-            throw new Error(
-                "Empty expression"
-            );
-        }
-
-
-        // Single number
-
-        if (
-            tokens.length === 1 &&
-            tokens[0].type === "number"
-        ) {
-
-            return this.compileNumber(
-                tokens[0].value
-            );
-        }
-
-
-        // Single string
-
-        if (
-            tokens.length === 1 &&
-            tokens[0].type === "string"
-        ) {
-
-            return this.compileString(
-                tokens[0].value
-            );
-        }
-
-
-        // Simple:
-        // number operator number
-
-        if (tokens.length === 3) {
-
-            const left =
-                this.compileToken(
-                    tokens[0]
-                );
-
-            const operator =
-                tokens[1];
-
-            const right =
-                this.compileToken(
-                    tokens[2]
-                );
-
-            return this.compileBinary(
-                operator.value,
-                left,
-                right
-            );
-        }
-
-
+    if (!VM) {
         throw new Error(
-            "Expression not supported yet: " +
-            expression
+            "Kn4ghtVM was not loaded. Load vm.js before compiler.js."
         );
     }
 
-
-    // ========================================================
-    // TOKEN
-    // ========================================================
-
-    compileToken(token) {
-
-        if (
-            token.type === "number"
-        ) {
-
-            return this.compileNumber(
-                token.value
+    class CompilerError extends Error {
+        constructor(message, line = null, column = null) {
+            super(
+                line !== null
+                    ? `${message} (line ${line}${column !== null ? `, column ${column}` : ""})`
+                    : message
             );
+
+            this.name = "CompilerError";
+            this.line = line;
+            this.column = column;
         }
-
-
-        if (
-            token.type === "string"
-        ) {
-
-            return this.compileString(
-                token.value
-            );
-        }
-
-
-        throw new Error(
-            "Unsupported token: " +
-            token.value
-        );
     }
 
+    const TOKEN = Object.freeze({
+        IDENTIFIER: "identifier",
+        NUMBER: "number",
+        STRING: "string",
+        SYMBOL: "symbol",
+        COMMENT: "comment",
+        WHITESPACE: "whitespace",
+        EOF: "eof"
+    });
 
-    // ========================================================
-    // TOKENIZER
-    // ========================================================
+    function lineOf(source, index) {
+        let line = 1;
 
-    tokenize(source) {
+        for (let i = 0; i < index; i++) {
+            if (source.charCodeAt(i) === 10) {
+                line++;
+            }
+        }
 
+        return line;
+    }
+
+    function columnOf(source, index) {
+        return index - source.lastIndexOf("\n", index);
+    }
+
+    function tokenize(source) {
         const tokens = [];
+        let i = 0;
 
-        let position = 0;
-
-
-        while (
-            position < source.length
-        ) {
-
-            const char =
-                source[position];
-
-
-            // Whitespace
-
-            if (
-                /\s/.test(char)
-            ) {
-
-                position++;
-
-                continue;
-            }
-
-
-            // Comments
-
-            if (
-                char === "-" &&
-                source[position + 1] === "-"
-            ) {
-
-                position += 2;
-
-                while (
-                    position < source.length &&
-                    source[position] !== "\n"
-                ) {
-
-                    position++;
-                }
-
-                continue;
-            }
-
-
-            // Number
-
-            if (
-                /[0-9]/.test(char)
-            ) {
-
-                let value = "";
-
-                while (
-                    position < source.length &&
-                    /[0-9.]/.test(
-                        source[position]
-                    )
-                ) {
-
-                    value +=
-                        source[position];
-
-                    position++;
-                }
-
-                tokens.push({
-                    type: "number",
-                    value: value
-                });
-
-                continue;
-            }
-
-
-            // String
-
-            if (
-                char === '"' ||
-                char === "'"
-            ) {
-
-                const quote =
-                    char;
-
-                position++;
-
-                let value = "";
-
-                while (
-                    position < source.length &&
-                    source[position] !== quote
-                ) {
-
-                    value +=
-                        source[position];
-
-                    position++;
-                }
-
-                position++;
-
-                tokens.push({
-                    type: "string",
-                    value: value
-                });
-
-                continue;
-            }
-
-
-            // Identifier
-
-            if (
-                /[A-Za-z_]/.test(char)
-            ) {
-
-                let value = "";
-
-                while (
-                    position < source.length &&
-                    /[A-Za-z0-9_]/.test(
-                        source[position]
-                    )
-                ) {
-
-                    value +=
-                        source[position];
-
-                    position++;
-                }
-
-                tokens.push({
-                    type: "identifier",
-                    value: value
-                });
-
-                continue;
-            }
-
-
-            // Operators
-
-            if (
-                "+-*/%".includes(char)
-            ) {
-
-                tokens.push({
-                    type: "operator",
-                    value: char
-                });
-
-                position++;
-
-                continue;
-            }
-
-
-            // Other symbols
-
+        function push(type, value, start, end) {
             tokens.push({
-                type: "symbol",
-                value: char
+                type: type,
+                value: value,
+                start: start,
+                end: end,
+                line: lineOf(source, start),
+                column: columnOf(source, start)
             });
-
-            position++;
         }
 
+        while (i < source.length) {
+            const start = i;
+            const ch = source[i];
+
+            if (/\s/.test(ch)) {
+                i++;
+
+                while (
+                    i < source.length &&
+                    /\s/.test(source[i])
+                ) {
+                    i++;
+                }
+
+                push(
+                    TOKEN.WHITESPACE,
+                    source.slice(start, i),
+                    start,
+                    i
+                );
+
+                continue;
+            }
+
+            if (source.startsWith("--", i)) {
+                i += 2;
+
+                while (
+                    i < source.length &&
+                    source[i] !== "\n"
+                ) {
+                    i++;
+                }
+
+                push(
+                    TOKEN.COMMENT,
+                    source.slice(start, i),
+                    start,
+                    i
+                );
+
+                continue;
+            }
+
+            if (
+                ch === '"' ||
+                ch === "'"
+            ) {
+                const quote = ch;
+
+                i++;
+
+                while (i < source.length) {
+                    if (source[i] === "\\") {
+                        i += 2;
+                        continue;
+                    }
+
+                    if (source[i] === quote) {
+                        i++;
+                        break;
+                    }
+
+                    i++;
+                }
+
+                push(
+                    TOKEN.STRING,
+                    source.slice(start, i),
+                    start,
+                    i
+                );
+
+                continue;
+            }
+
+            if (source.startsWith("[[", i)) {
+                const close =
+                    source.indexOf("]]", i + 2);
+
+                if (close !== -1) {
+                    i = close + 2;
+
+                    push(
+                        TOKEN.STRING,
+                        source.slice(start, i),
+                        start,
+                        i
+                    );
+
+                    continue;
+                }
+            }
+
+            if (/[0-9]/.test(ch)) {
+                i++;
+
+                while (
+                    i < source.length &&
+                    /[0-9A-Fa-f.xXpPeE_]/.test(
+                        source[i]
+                    )
+                ) {
+                    i++;
+                }
+
+                push(
+                    TOKEN.NUMBER,
+                    source.slice(start, i),
+                    start,
+                    i
+                );
+
+                continue;
+            }
+
+            if (/[A-Za-z_]/.test(ch)) {
+                i++;
+
+                while (
+                    i < source.length &&
+                    /[A-Za-z0-9_]/.test(
+                        source[i]
+                    )
+                ) {
+                    i++;
+                }
+
+                push(
+                    TOKEN.IDENTIFIER,
+                    source.slice(start, i),
+                    start,
+                    i
+                );
+
+                continue;
+            }
+
+            const three =
+                source.slice(i, i + 3);
+
+            const two =
+                source.slice(i, i + 2);
+
+            if (three === "...") {
+                i += 3;
+            } else if (
+                [
+                    "==",
+                    "~=",
+                    "<=",
+                    ">=",
+                    "..",
+                    "//",
+                    "<<",
+                    ">>",
+                    "+=",
+                    "-=",
+                    "*=",
+                    "/=",
+                    "%=",
+                    "::"
+                ].includes(two)
+            ) {
+                i += 2;
+            } else {
+                i++;
+            }
+
+            push(
+                TOKEN.SYMBOL,
+                source.slice(start, i),
+                start,
+                i
+            );
+        }
+
+        push(
+            TOKEN.EOF,
+            "",
+            source.length,
+            source.length
+        );
 
         return tokens;
+                }
+
+ // ============================================================
+// compiler.js - Part 2
+// Macro detection and function analysis
+// ============================================================
+
+    const FUNCTION_MACROS = new Set([
+        "MV_VM",
+        "MV_CFF",
+        "MV_ENC_FUNC",
+        "MV_OMIT",
+        "MV_INLINE"
+    ]);
+
+    const ALL_MACROS = new Set([
+        "MV_VM",
+        "MV_CFF",
+        "MV_ENC_FUNC",
+        "MV_ENC_STR",
+        "MV_INDEX_TO_NUM",
+        "MV_OBFUSCATED",
+        "MV_CRASH",
+        "MV_OMIT",
+        "MV_INLINE",
+        "MV_LINE",
+        "MV_COMPRESS",
+
+        "LPH_OBFUSCATED",
+        "LPH_LINE",
+        "LPH_CRASH",
+        "LPH_NO_VIRTUALIZE",
+        "LPH_ENCFUNC",
+        "LPH_ENCSTR",
+        "LPH_ENCNUM",
+        "LPH_JIT",
+        "LPH_NO_UPVALUES"
+    ]);
+
+    function findMacroCalls(source, tokens) {
+        const result = [];
+
+        for (let i = 0; i < tokens.length - 1; i++) {
+            const token = tokens[i];
+
+            if (
+                token.type !== TOKEN.IDENTIFIER ||
+                !ALL_MACROS.has(token.value)
+            ) {
+                continue;
+            }
+
+            let j = i + 1;
+
+            while (
+                j < tokens.length &&
+                tokens[j].type === TOKEN.WHITESPACE
+            ) {
+                j++;
+            }
+
+            const next = tokens[j];
+
+            const normalized =
+                VM.normalizeMacro(token.value);
+
+            result.push({
+                originalName: token.value,
+
+                normalizedName: normalized,
+
+                type:
+                    FUNCTION_MACROS.has(normalized)
+                        ? "function"
+                        : "value",
+
+                hasCall:
+                    !!next &&
+                    next.type === TOKEN.SYMBOL &&
+                    next.value === "(",
+
+                start: token.start,
+                end: token.end,
+
+                line: token.line,
+                column: token.column
+            });
+        }
+
+        return result;
     }
 
+    function findDirectives(source) {
+        const lines =
+            source.split(/\r?\n/);
 
-    // ========================================================
-    // FINISH
-    // ========================================================
+        const directives = [];
 
-    finish() {
+        for (
+            let i = 0;
+            i < lines.length;
+            i++
+        ) {
+            const parsed =
+                VM.parseDirective(lines[i]);
 
-        this.emit(
-            "HALT"
+            if (!parsed) {
+                continue;
+            }
+
+            directives.push({
+                ...parsed,
+
+                line: i + 1,
+
+                source: lines[i]
+            });
+        }
+
+        return directives;
+    }
+
+    function findFunctions(
+        source,
+        tokens,
+        directives
+    ) {
+        const functions = [];
+
+        const directiveMap =
+            new Map();
+
+        for (const directive of directives) {
+            directiveMap.set(
+                directive.line,
+                directive
+            );
+        }
+
+        for (
+            let i = 0;
+            i < tokens.length;
+            i++
+        ) {
+            const token = tokens[i];
+
+            if (
+                token.type !== TOKEN.IDENTIFIER ||
+                token.value !== "function"
+            ) {
+                continue;
+            }
+
+            let j = i + 1;
+
+            while (
+                j < tokens.length &&
+                tokens[j].type === TOKEN.WHITESPACE
+            ) {
+                j++;
+            }
+
+            let name = null;
+
+            if (
+                tokens[j] &&
+                tokens[j].type === TOKEN.IDENTIFIER
+            ) {
+                name = tokens[j].value;
+            }
+
+            const info =
+                new VM.FunctionInfo({
+                    name: name,
+                    line: token.line
+                });
+
+            const directive =
+                directiveMap.get(
+                    token.line - 1
+                );
+
+            if (directive) {
+                info.applyMacro(
+                    directive.name,
+                    directive.args
+                );
+            }
+
+            functions.push(info);
+        }
+
+        return functions;
+    }
+
+    function normalizeAliases(source) {
+        return source
+            .replace(
+                /\bLPH_OBFUSCATED\b/g,
+                "MV_OBFUSCATED"
+            )
+            .replace(
+                /\bLPH_LINE\b/g,
+                "MV_LINE"
+            )
+            .replace(
+                /\bLPH_CRASH\b/g,
+                "MV_CRASH"
+            )
+            .replace(
+                /\bLPH_NO_VIRTUALIZE\b/g,
+                "MV_OMIT"
+            )
+            .replace(
+                /\bLPH_ENCFUNC\b/g,
+                "MV_ENC_FUNC"
+            );
+            }
+
+     // ============================================================
+    // compiler.js - Part 3
+    // Macro transformations
+    // ============================================================
+
+    function replaceObfuscatedFlag(source) {
+        return source.replace(
+            /\bMV_OBFUSCATED\b/g,
+            "true"
         );
+    }
+
+    function replaceLineMacro(source) {
+        const lines =
+            source.split(/\r?\n/);
+
+        for (let i = 0; i < lines.length; i++) {
+            lines[i] = lines[i].replace(
+                /\bMV_LINE\b/g,
+                String(i + 1)
+            );
+        }
+
+        return lines.join("\n");
+    }
+
+    function stripCompress(source) {
+        return source.replace(
+            /\bMV_COMPRESS\s*\(\s*(["'][\s\S]*?["'])\s*\)/g,
+            "$1"
+        );
+    }
+
+    function randomSeed() {
+        const chars =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+        let output = "";
+
+        for (let i = 0; i < 24; i++) {
+            output += chars[
+                Math.floor(
+                    Math.random() * chars.length
+                )
+            ];
+        }
+
+        return output;
+    }
+
+    // ------------------------------------------------------------
+    // Compilation result
+    // ------------------------------------------------------------
+
+    class CompilationResult {
+        constructor() {
+            this.ok = false;
+
+            this.source = "";
+
+            this.originalSource = "";
+
+            this.bytecode = null;
+
+            this.functions = [];
+
+            this.macros = [];
+
+            this.directives = [];
+
+            this.warnings = [];
+
+            this.errors = [];
+
+            this.stats = {
+                inputBytes: 0,
+                outputBytes: 0,
+                functionCount: 0,
+                macroCount: 0,
+                directiveCount: 0
+            };
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Main compile function
+    // ------------------------------------------------------------
+
+    function compile(source, options = {}) {
+        const result =
+            new CompilationResult();
+
+        if (typeof source !== "string") {
+            result.errors.push(
+                "Input must be a string containing Luau source."
+            );
+
+            return result;
+        }
+
+        result.originalSource = source;
+
+        result.stats.inputBytes =
+            new TextEncoder()
+                .encode(source)
+                .length;
+
+        try {
+            const tokens =
+                tokenize(source);
+
+            result.directives =
+                findDirectives(source);
+
+            result.macros =
+                findMacroCalls(
+                    source,
+                    tokens
+                );
+
+            result.functions =
+                findFunctions(
+                    source,
+                    tokens,
+                    result.directives
+                );
+
+            const context =
+                new VM.VMCompilerContext({
+                    seed:
+                        options.seed ||
+                        randomSeed()
+                });
+
+            for (
+                const fn of result.functions
+            ) {
+                context.addFunction(fn);
+            }
+
+            // ----------------------------------------------------
+            // Transform source
+            // ----------------------------------------------------
+
+            let output = source;
+
+            output =
+                normalizeAliases(output);
+
+            output =
+                replaceObfuscatedFlag(output);
+
+            output =
+                replaceLineMacro(output);
+
+            output =
+                stripCompress(output);
+
+            // ----------------------------------------------------
+            // Create VM bytecode metadata
+            // ----------------------------------------------------
+
+            result.bytecode =
+                context.build({
+                    compiler: "sytes",
+
+                    vmVersion:
+                        VM.VERSION,
+
+                    macros:
+                        result.macros.map(
+                            macro => ({
+                                name:
+                                    macro.normalizedName,
+
+                                line:
+                                    macro.line
+                            })
+                        ),
+
+                    directives:
+                        result.directives.map(
+                            directive => ({
+                                name:
+                                    directive.name,
+
+                                args:
+                                    directive.args,
+
+                                line:
+                                    directive.line
+                            })
+                        )
+                });
+
+            result.source =
+                output;
+
+            result.stats.outputBytes =
+                new TextEncoder()
+                    .encode(output)
+                    .length;
+
+            result.stats.functionCount =
+                result.functions.length;
+
+            result.stats.macroCount =
+                result.macros.length;
+
+            result.stats.directiveCount =
+                result.directives.length;
+
+            result.ok = true;
+
+            return result;
+
+        } catch (error) {
+
+            result.errors.push(
+                error instanceof Error
+                    ? error.message
+                    : String(error)
+            );
+
+            return result;
+        }
+                }
+
+
+     // ============================================================
+    // compiler.js - Part 4
+    // Public API and export
+    // ============================================================
+
+    function obfuscate(source, options = {}) {
+        const result =
+            compile(source, options);
+
+        if (!result.ok) {
+            throw new CompilerError(
+                result.errors.join("\n")
+            );
+        }
+
+        return result.source;
+    }
+
+    function analyze(source) {
+        if (typeof source !== "string") {
+            throw new TypeError(
+                "Source must be a string."
+            );
+        }
+
+        const tokens =
+            tokenize(source);
+
+        const directives =
+            findDirectives(source);
+
+        const macros =
+            findMacroCalls(
+                source,
+                tokens
+            );
+
+        const functions =
+            findFunctions(
+                source,
+                tokens,
+                directives
+            );
 
         return {
-
-            constants:
-                this.constants,
-
-            instructions:
-                this.instructions,
-
-            registers:
-                this.registerCount
+            tokens,
+            macros,
+            directives,
+            functions
         };
     }
-}
 
+    // ------------------------------------------------------------
+    // Export compiler
+    // ------------------------------------------------------------
 
-// ============================================================
-// BROWSER EXPORT
-// ============================================================
+    global.SytesCompiler = {
+        VERSION: 2,
 
-if (
-    typeof window !== "undefined"
-) {
+        TOKEN,
 
-    window.Kn4ghtCompiler =
-        Kn4ghtCompiler;
-}
+        CompilerError,
 
+        CompilationResult,
 
-// ============================================================
-// NODE EXPORT
-// ============================================================
+        tokenize,
 
-if (
-    typeof module !== "undefined" &&
-    module.exports
-) {
+        findMacroCalls,
 
-    module.exports =
-        Kn4ghtCompiler;
-            }
+        findDirectives,
+
+        findFunctions,
+
+        normalizeAliases,
+
+        compile,
+
+        obfuscate,
+
+        analyze
+    };
+
+})(window);
