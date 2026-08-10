@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>LuaShield — Obfuscator</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<nav>
+    <a href="index.html" class="logo">
+        Lua<span>Shield</span>
+    </a>
+
+    <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="#settings">Settings</a>
+    </div>
+</nav>
+
+
+<main class="obfuscator-page">
+
+    <div class="page-header">
+        <div class="badge">Lua / Luau Obfuscator</div>
+
+        <h1>
+            Protect your
+            <span>Lua code.</span>
+        </h1>
+
+        <p>
+            Paste your Lua/Luau source, configure the protection
+            options, and generate transformed output.
+        </p>
+    </div>
+
+
+    <section class="workspace">
+
+        <!-- INPUT -->
+
+        <div class="editor-card">
+
+            <div class="editor-header">
+                <div>
+                    <strong>Source Code</strong>
+                    <small id="inputSize">0 characters</small>
+                </div>
+
+                <div class="editor-actions">
+                    <label class="upload-btn">
+                        Upload
+                        <input
+                            type="file"
+                            id="fileInput"
+                            accept=".lua,.luau,.txt"
+                            hidden
+                        >
+                    </label>
+
+                    <button id="clearBtn" class="small-btn">
+                        Clear
+                    </button>
+                </div>
+            </div>
+
+            <textarea
+                id="sourceCode"
+                spellcheck="false"
+                placeholder="Paste your Lua/Luau code here...
+
+Example:
+
+local function hello(name)
+    print('Hello ' .. name)
+end
+
+hello('World')"
+            ></textarea>
+
+        </div>
+
+
+        <!-- SETTINGS -->
+
+        <div class="settings-card" id="settings">
+
+            <div class="settings-title">
+                <h2>Protection Settings</h2>
+
+                <button id="resetBtn" class="small-btn">
+                    Reset
+                </button>
+            </div>
+
+
+            <label class="option">
+                <div>
+                    <strong>Rename identifiers</strong>
+                    <span>Rename local variables and function parameters.</span>
+                </div>
+
+                <input
+                    type="checkbox"
+                    id="renameIdentifiers"
+                    checked
+                >
+            </label>
+
+
+            <label class="option">
+                <div>
+                    <strong>Encode strings</strong>
+                    <span>Transform ordinary quoted strings.</span>
+                </div>
+
+                <input
+                    type="checkbox"
+                    id="encodeStrings"
+                    checked
+                >
+            </label>
+
+
+            <label class="option">
+                <div>
+                    <strong>Remove comments</strong>
+                    <span>Remove Lua comments from the output.</span>
+                </div>
+
+                <input
+                    type="checkbox"
+                    id="removeComments"
+                    checked
+                >
+            </label>
+
+
+            <label class="option">
+                <div>
+                    <strong>Minify whitespace</strong>
+                    <span>Reduce unnecessary whitespace.</span>
+                </div>
+
+                <input
+                    type="checkbox"
+                    id="minify"
+                >
+            </label>
+
+
+            <label class="option disabled-option">
+                <div>
+                    <strong>VM protection</strong>
+                    <span>Requires a server-side VM compiler.</span>
+                </div>
+
+                <input
+                    type="checkbox"
+                    disabled
+                >
+            </label>
+
+
+            <button id="obfuscateBtn" class="obfuscate-btn">
+                <span id="buttonText">Obfuscate Code</span>
+            </button>
+
+        </div>
+
+
+        <!-- OUTPUT -->
+
+        <div class="editor-card output-card">
+
+            <div class="editor-header">
+
+                <div>
+                    <strong>Protected Output</strong>
+                    <small id="outputSize">0 characters</small>
+                </div>
+
+                <div class="editor-actions">
+
+                    <button id="copyBtn" class="small-btn">
+                        Copy
+                    </button>
+
+                    <button id="downloadBtn" class="small-btn">
+                        Download
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <textarea
+                id="outputCode"
+                spellcheck="false"
+                readonly
+                placeholder="Your protected code will appear here..."
+            ></textarea>
+
+        </div>
+
+    </section>
+
+
+    <div id="status" class="status"></div>
+
+</main>
+
+
+<footer>
+    <div>
+        © 2026 LuaShield
+    </div>
+
+    <div>
+        Lua/Luau Code Protection
+    </div>
+</footer>
+
+
+<script src="obfuscator.js"></script>
+
+</body>
+</html>

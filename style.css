@@ -1,0 +1,220 @@
+/* Obfuscator */
+
+.obfuscator-page {
+    max-width: 1250px;
+    margin: auto;
+    padding: 130px 7% 70px;
+}
+
+.page-header {
+    text-align: center;
+    margin-bottom: 45px;
+}
+
+.page-header h1 {
+    font-size: clamp(40px, 6vw, 65px);
+    line-height: 1;
+    letter-spacing: -3px;
+    margin: 20px 0;
+}
+
+.page-header h1 span {
+    color: #8b7cff;
+}
+
+.page-header p {
+    max-width: 650px;
+    margin: auto;
+    color: #9298ad;
+}
+
+.workspace {
+    display: grid;
+    gap: 20px;
+}
+
+.editor-card,
+.settings-card {
+    background: #0c0f1c;
+    border: 1px solid #1d2134;
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.editor-header,
+.settings-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    padding: 15px 18px;
+    border-bottom: 1px solid #1d2134;
+}
+
+.editor-header strong {
+    display: block;
+}
+
+.editor-header small {
+    color: #70778f;
+    font-size: 11px;
+}
+
+.editor-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.small-btn,
+.upload-btn {
+    border: 1px solid #292e46;
+    background: #111526;
+    color: #cdd1df;
+    padding: 7px 11px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.small-btn:hover,
+.upload-btn:hover {
+    background: #181c30;
+}
+
+textarea {
+    width: 100%;
+    min-height: 330px;
+    display: block;
+    resize: vertical;
+    border: 0;
+    outline: 0;
+    padding: 20px;
+    background: #080a13;
+    color: #dce0ef;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+textarea::placeholder {
+    color: #4f566d;
+}
+
+.settings-card {
+    padding-bottom: 15px;
+}
+
+.settings-title {
+    padding: 18px;
+}
+
+.settings-title h2 {
+    font-size: 18px;
+}
+
+.option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 15px 18px;
+    border-bottom: 1px solid #171b2b;
+    cursor: pointer;
+}
+
+.option strong,
+.option span {
+    display: block;
+}
+
+.option strong {
+    font-size: 14px;
+}
+
+.option span {
+    margin-top: 3px;
+    color: #70778f;
+    font-size: 12px;
+}
+
+.option input {
+    width: 18px;
+    height: 18px;
+    accent-color: #7c6cff;
+}
+
+.disabled-option {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.obfuscate-btn {
+    width: calc(100% - 36px);
+    margin: 18px;
+    padding: 13px;
+    border: 0;
+    border-radius: 10px;
+    background: #7c6cff;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.obfuscate-btn:hover {
+    filter: brightness(1.1);
+}
+
+.obfuscate-btn:disabled {
+    opacity: .6;
+    cursor: wait;
+}
+
+.status {
+    min-height: 25px;
+    margin-top: 15px;
+    text-align: center;
+    color: #858ca4;
+    font-size: 13px;
+}
+
+.status.success {
+    color: #75d6a0;
+}
+
+.status.error {
+    color: #ff7474;
+}
+
+.status.loading {
+    color: #9b8eff;
+}
+
+@media (min-width: 900px) {
+    .workspace {
+        grid-template-columns: 1fr 330px;
+        align-items: start;
+    }
+
+    .output-card {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 700px) {
+    .obfuscator-page {
+        padding-top: 105px;
+    }
+
+    .editor-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .editor-actions {
+        width: 100%;
+    }
+
+    textarea {
+        min-height: 280px;
+    }
+}
