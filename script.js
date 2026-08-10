@@ -1078,6 +1078,8 @@ if (vmTestButton) {
     );
 }
 
+alert("VM test script loaded");
+
 
 // ===============================
 // START
