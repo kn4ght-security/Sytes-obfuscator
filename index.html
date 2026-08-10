@@ -1,421 +1,610 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LuaShield — Lua/Luau Protection</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<style>
-* {
-  box-sizing: border-box;
-}
+    <title>LuaVeil — Lua Obfuscator</title>
 
-html {
-  scroll-behavior: smooth;
-}
+    <style>
+        * {
+            box-sizing: border-box;
+        }
 
-body {
-  margin: 0;
-  background: #070812;
-  color: #f5f7ff;
-  font-family: Inter, system-ui, sans-serif;
-}
+        body {
+            margin: 0;
+            background: #070812;
+            color: #f5f7ff;
+            font-family: Arial, sans-serif;
+        }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+        button,
+        textarea,
+        input {
+            font: inherit;
+        }
 
-nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 5;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 18px 7%;
-  background: #070812dd;
-  backdrop-filter: blur(14px);
-  border-bottom: 1px solid #191c2d;
-}
+        .nav {
+            height: 65px;
+            padding: 0 20px;
 
-.logo {
-  font-size: 22px;
-  font-weight: 800;
-}
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
 
-.logo span,
-h1 span {
-  color: #8b7cff;
-}
+            border-bottom: 1px solid #1d2135;
+            background: #090b15;
+        }
 
-.links {
-  display: flex;
-  gap: 28px;
-  color: #aeb3c7;
-  font-size: 14px;
-}
+        .logo {
+            font-size: 21px;
+            font-weight: bold;
+        }
 
-.btn {
-  display: inline-block;
-  padding: 11px 17px;
-  border-radius: 10px;
-  background: #7c6cff;
-  border: 1px solid #9387ff;
-  font-weight: 700;
-}
+        .logo span {
+            color: #8171ff;
+        }
 
-.hero {
-  text-align: center;
-  padding: 190px 7% 120px;
-  position: relative;
-}
+        .version {
+            color: #70778e;
+            font-size: 12px;
+        }
 
-.hero:before {
-  content: "";
-  position: absolute;
-  width: 420px;
-  height: 420px;
-  left: 50%;
-  top: 100px;
-  transform: translateX(-50%);
-  background: #6655ff;
-  filter: blur(150px);
-  opacity: .12;
-}
+        .container {
+            width: min(1200px, calc(100% - 30px));
+            margin: auto;
+            padding: 45px 0;
+        }
 
-.hero > * {
-  position: relative;
-}
+        .hero {
+            text-align: center;
+            margin-bottom: 30px;
+        }
 
-.badge {
-  display: inline-block;
-  padding: 7px 13px;
-  border: 1px solid #282b45;
-  border-radius: 999px;
-  background: #101225;
-  color: #aeb3c7;
-  font-size: 13px;
-}
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
 
-h1 {
-  font-size: clamp(44px, 7vw, 78px);
-  line-height: 1.02;
-  letter-spacing: -3px;
-  margin: 22px 0;
-}
+            border: 1px solid #292e48;
+            border-radius: 999px;
 
-.hero p {
-  max-width: 650px;
-  margin: 0 auto;
-  color: #aeb3c7;
-  font-size: 18px;
-}
+            color: #a59cff;
+            background: #101326;
 
-.actions {
-  margin-top: 30px;
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
+            font-size: 11px;
+            font-weight: bold;
+        }
 
-.secondary {
-  padding: 11px 17px;
-  border: 1px solid #2a2e47;
-  border-radius: 10px;
-  background: #0d1020;
-}
+        h1 {
+            margin: 18px 0 10px;
 
-section {
-  max-width: 1180px;
-  margin: auto;
-  padding: 80px 7%;
-}
+            font-size: clamp(40px, 8vw, 68px);
+            letter-spacing: -3px;
+        }
 
-.title {
-  text-align: center;
-  margin-bottom: 40px;
-}
+        h1 span {
+            color: #8171ff;
+        }
 
-.title h2 {
-  font-size: 34px;
-  margin: 0;
-}
+        .hero p {
+            max-width: 620px;
+            margin: auto;
 
-.title p,
-.card p,
-.step p {
-  color: #8f95aa;
-}
+            color: #858ca2;
+            font-size: 14px;
+            line-height: 1.6;
+        }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
-}
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 18px;
+        }
 
-.card {
-  padding: 25px;
-  border: 1px solid #1d2134;
-  border-radius: 16px;
-  background: #0c0f1c;
-}
+        .card {
+            overflow: hidden;
 
-.icon {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 11px;
-  background: #17152d;
-  color: #9b8eff;
-  font-weight: 800;
-}
+            border: 1px solid #1d2135;
+            border-radius: 15px;
 
-.card h3 {
-  margin: 16px 0 7px;
-}
+            background: #0c0f1c;
+        }
 
-.steps {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 15px;
-}
+        .card-header {
+            min-height: 57px;
+            padding: 12px 14px;
 
-.step {
-  padding: 22px;
-  border-left: 2px solid #7568ff;
-}
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
 
-.step b {
-  color: #8e82ff;
-}
+            border-bottom: 1px solid #1d2135;
+        }
 
-.cta {
-  text-align: center;
-  padding: 55px 25px;
-  background: #0d1020;
-  border: 1px solid #22263b;
-  border-radius: 20px;
-}
+        .title {
+            font-size: 14px;
+            font-weight: bold;
+        }
 
-footer {
-  padding: 30px 7%;
-  border-top: 1px solid #191c2d;
-  color: #777e96;
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-}
+        .counter {
+            margin-top: 3px;
 
-@media (max-width: 800px) {
-  .links {
-    display: none;
-  }
+            color: #626a80;
+            font-size: 10px;
+        }
 
-  .grid,
-  .steps {
-    grid-template-columns: 1fr;
-  }
+        .buttons {
+            display: flex;
+            gap: 7px;
+        }
 
-  footer {
-    flex-direction: column;
-    gap: 10px;
-  }
-}
-</style>
+        button,
+        .upload {
+            padding: 8px 11px;
+
+            border: 1px solid #2b3049;
+            border-radius: 8px;
+
+            background: #121629;
+            color: #d9ddec;
+
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        button:hover,
+        .upload:hover {
+            background: #191d32;
+        }
+
+        .primary {
+            width: 100%;
+
+            margin-top: 15px;
+            padding: 13px;
+
+            border: 0;
+            border-radius: 9px;
+
+            background: #8171ff;
+            color: white;
+
+            font-weight: bold;
+        }
+
+        .primary:hover {
+            background: #9183ff;
+        }
+
+        .primary:disabled {
+            opacity: .5;
+            cursor: wait;
+        }
+
+        textarea {
+            display: block;
+
+            width: 100%;
+            min-height: 390px;
+
+            padding: 17px;
+
+            border: 0;
+            outline: 0;
+
+            resize: vertical;
+
+            background: #080a13;
+            color: #dfe3ef;
+
+            font-family: monospace;
+            font-size: 13px;
+            line-height: 1.65;
+        }
+
+        textarea::placeholder {
+            color: #4e556b;
+        }
+
+        #output {
+            color: #c2c7d8;
+        }
+
+        .settings {
+            padding: 16px;
+        }
+
+        .settings h2 {
+            margin: 2px 0 15px;
+            font-size: 17px;
+        }
+
+        .option {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+
+            padding: 14px 0;
+
+            border-bottom: 1px solid #191d2d;
+
+            cursor: pointer;
+        }
+
+        .option strong {
+            display: block;
+            font-size: 13px;
+        }
+
+        .option small {
+            display: block;
+
+            margin-top: 4px;
+
+            color: #6e758a;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .option input {
+            width: 18px;
+            height: 18px;
+
+            accent-color: #8171ff;
+        }
+
+        .notice {
+            margin-top: 16px;
+            padding: 11px;
+
+            border: 1px solid #282d43;
+            border-radius: 9px;
+
+            color: #71798f;
+            background: #0a0d18;
+
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .status {
+            min-height: 22px;
+
+            margin-top: 15px;
+
+            text-align: center;
+
+            color: #727a90;
+            font-size: 12px;
+        }
+
+        .success {
+            color: #69d99a;
+        }
+
+        .error {
+            color: #ff7070;
+        }
+
+        .loading {
+            color: #a49aff;
+        }
+
+        .footer {
+            margin-top: 35px;
+            padding: 25px;
+
+            border-top: 1px solid #1b1e30;
+
+            text-align: center;
+
+            color: #5e667b;
+            font-size: 11px;
+        }
+
+        @media (max-width: 850px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            textarea {
+                min-height: 300px;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .container {
+                width: calc(100% - 20px);
+                padding-top: 30px;
+            }
+
+            .card-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .buttons {
+                width: 100%;
+            }
+
+            .buttons button,
+            .upload {
+                flex: 1;
+                text-align: center;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
-<nav>
-  <a class="logo" href="#">
-    Lua<span>Shield</span>
-  </a>
+<nav class="nav">
+    <div class="logo">
+        Lua<span>Veil</span>
+    </div>
 
-  <div class="links">
-    <a href="#features">Features</a>
-    <a href="#how">How It Works</a>
-    <a href="#api">API</a>
-  </div>
-
-  <a class="btn" href="/obfuscator">
-    Get Started
-  </a>
+    <div class="version">
+        Lua / Luau Obfuscator
+    </div>
 </nav>
 
-<main>
 
-<section class="hero">
+<main class="container">
 
-  <div class="badge">
-    Lua &amp; Luau Code Protection
-  </div>
+    <section class="hero">
+        <div class="badge">
+            SOURCE PROTECTION
+        </div>
 
-  <h1>
-    Protect your code.<br>
-    <span>Keep control.</span>
-  </h1>
+        <h1>
+            Lua<span>Veil</span>
+        </h1>
 
-  <p>
-    Transform and protect Lua/Luau scripts with a modular
-    obfuscation platform built for projects you own.
-  </p>
-
-  <div class="actions">
-    <a class="btn" href="/obfuscator">
-      Start Obfuscating →
-    </a>
-
-    <a class="secondary" href="#features">
-      Explore Features
-    </a>
-  </div>
-
-</section>
+        <p>
+            Protect and transform your Lua/Luau source code
+            directly in your browser.
+        </p>
+    </section>
 
 
-<section id="features">
+    <div class="grid">
 
-  <div class="title">
-    <h2>Protection Features</h2>
-    <p>
-      Build your protection profile around your project.
-    </p>
-  </div>
+        <!-- INPUT -->
 
-  <div class="grid">
+        <section class="card">
 
-    <div class="card">
-      <div class="icon">A</div>
-      <h3>Identifier Renaming</h3>
-      <p>
-        Transform selected identifiers to make source
-        structure harder to read.
-      </p>
+            <div class="card-header">
+                <div>
+                    <div class="title">
+                        Lua Source
+                    </div>
+
+                    <div
+                        class="counter"
+                        id="inputCounter"
+                    >
+                        0 characters
+                    </div>
+                </div>
+
+                <div class="buttons">
+
+                    <label
+                        class="upload"
+                        for="fileInput"
+                    >
+                        Upload
+                    </label>
+
+                    <input
+                        id="fileInput"
+                        type="file"
+                        accept=".lua,.luau,.txt"
+                        hidden
+                    >
+
+                    <button
+                        id="clearBtn"
+                        type="button"
+                    >
+                        Clear
+                    </button>
+
+                </div>
+            </div>
+
+
+            <textarea
+                id="source"
+                spellcheck="false"
+                autocomplete="off"
+                autocapitalize="off"
+                placeholder="Paste your Lua/Luau code here..."
+            ></textarea>
+
+        </section>
+
+
+        <!-- SETTINGS -->
+
+        <aside class="card">
+
+            <div class="settings">
+
+                <h2>
+                    Protection Options
+                </h2>
+
+
+                <label class="option">
+
+                    <div>
+                        <strong>
+                            Remove comments
+                        </strong>
+
+                        <small>
+                            Removes normal Lua comments.
+                        </small>
+                    </div>
+
+                    <input
+                        id="removeComments"
+                        type="checkbox"
+                        checked
+                    >
+
+                </label>
+
+
+                <label class="option">
+
+                    <div>
+                        <strong>
+                            Rename locals
+                        </strong>
+
+                        <small>
+                            Renames simple local variables.
+                        </small>
+                    </div>
+
+                    <input
+                        id="renameLocals"
+                        type="checkbox"
+                        checked
+                    >
+
+                </label>
+
+
+                <label class="option">
+
+                    <div>
+                        <strong>
+                            Encode strings
+                        </strong>
+
+                        <small>
+                            Converts characters to Lua escapes.
+                        </small>
+                    </div>
+
+                    <input
+                        id="encodeStrings"
+                        type="checkbox"
+                        checked
+                    >
+
+                </label>
+
+
+                <label class="option">
+
+                    <div>
+                        <strong>
+                            Minify
+                        </strong>
+
+                        <small>
+                            Reduces unnecessary whitespace.
+                        </small>
+                    </div>
+
+                    <input
+                        id="minify"
+                        type="checkbox"
+                    >
+
+                </label>
+
+
+                <div class="notice">
+                    LuaVeil runs entirely in your browser.
+                    Your source isn't uploaded by this page.
+                </div>
+
+
+                <button
+                    id="obfuscateBtn"
+                    class="primary"
+                    type="button"
+                >
+                    Obfuscate Lua
+                </button>
+
+            </div>
+
+        </aside>
+
+
+        <!-- OUTPUT -->
+
+        <section class="card">
+
+            <div class="card-header">
+
+                <div>
+                    <div class="title">
+                        Protected Output
+                    </div>
+
+                    <div
+                        class="counter"
+                        id="outputCounter"
+                    >
+                        0 characters
+                    </div>
+                </div>
+
+                <div class="buttons">
+
+                    <button
+                        id="copyBtn"
+                        type="button"
+                    >
+                        Copy
+                    </button>
+
+                    <button
+                        id="downloadBtn"
+                        type="button"
+                    >
+                        Download
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <textarea
+                id="output"
+                readonly
+                spellcheck="false"
+                placeholder="Your protected code will appear here..."
+            ></textarea>
+
+        </section>
+
     </div>
 
-    <div class="card">
-      <div class="icon">S</div>
-      <h3>String Protection</h3>
-      <p>
-        Apply configurable transformations to string constants.
-      </p>
-    </div>
 
-    <div class="card">
-      <div class="icon">C</div>
-      <h3>Constant Transformation</h3>
-      <p>
-        Transform supported constants during the protection pipeline.
-      </p>
-    </div>
-
-    <div class="card">
-      <div class="icon">V</div>
-      <h3>VM Mode</h3>
-      <p>
-        Use your own custom virtual-machine architecture.
-      </p>
-    </div>
-
-    <div class="card">
-      <div class="icon">M</div>
-      <h3>Minification</h3>
-      <p>
-        Remove unnecessary comments and formatting.
-      </p>
-    </div>
-
-    <div class="card">
-      <div class="icon">API</div>
-      <h3>API Access</h3>
-      <p>
-        Connect applications to your server-side engine.
-      </p>
-    </div>
-
-  </div>
-
-</section>
-
-
-<section id="how">
-
-  <div class="title">
-    <h2>How It Works</h2>
-    <p>A simple protection pipeline.</p>
-  </div>
-
-  <div class="steps">
-
-    <div class="step">
-      <b>01</b>
-      <h3>Upload</h3>
-      <p>Paste or upload Lua/Luau source.</p>
-    </div>
-
-    <div class="step">
-      <b>02</b>
-      <h3>Configure</h3>
-      <p>Choose your transformations.</p>
-    </div>
-
-    <div class="step">
-      <b>03</b>
-      <h3>Obfuscate</h3>
-      <p>Process the protection profile.</p>
-    </div>
-
-    <div class="step">
-      <b>04</b>
-      <h3>Download</h3>
-      <p>Copy or download the output.</p>
-    </div>
-
-  </div>
-
-</section>
-
-
-<section id="api">
-
-  <div class="cta">
-
-    <h2>
-      Ready to protect your Lua code?
-    </h2>
-
-    <p style="color:#8f95aa">
-      Start with the web obfuscator or integrate
-      your backend through the API.
-    </p>
-
-    <a class="btn" href="/obfuscator">
-      Open Obfuscator
-    </a>
-
-  </div>
-
-</section>
+    <div
+        id="status"
+        class="status"
+    ></div>
 
 </main>
 
 
-<footer>
-
-  <div>
-    © 2026 LuaShield. Built for code you own.
-  </div>
-
-  <div>
-    Terms &nbsp; Privacy &nbsp; API
-  </div>
-
+<footer class="footer">
+    LuaVeil © 2026
 </footer>
+
+
+<script src="./script.js"></script>
 
 </body>
 </html>
