@@ -1,435 +1,202 @@
 // ============================================================
-// KN4GHT LUau VM / BYTECODE CORE
-// Compiler-side VM used by compiler.js
+// SYTES OBFUSCATOR
+// vm.js - Part 1
 // ============================================================
 
 (function (global) {
     "use strict";
 
-    const VERSION = 2;
+    const VERSION = "1.0.0";
 
-    // ------------------------------------------------------------
-    // Instruction set
-    // ------------------------------------------------------------
+    // --------------------------------------------------------
+    // Macro aliases
+    // --------------------------------------------------------
 
-    const OPCODES = Object.freeze({
-        NOP: 0,
-
-        LOADK: 1,
-        MOVE: 2,
-
-        ADD: 3,
-        SUB: 4,
-        MUL: 5,
-        DIV: 6,
-        MOD: 7,
-        POW: 8,
-        UNM: 9,
-
-        EQ: 10,
-        NE: 11,
-        LT: 12,
-        LE: 13,
-        GT: 14,
-        GE: 15,
-
-        AND: 16,
-        OR: 17,
-        NOT: 18,
-
-        JMP: 19,
-        JMP_IF_FALSE: 20,
-        JMP_IF_TRUE: 21,
-
-        GETGLOBAL: 22,
-        SETGLOBAL: 23,
-
-        GETTABLE: 24,
-        SETTABLE: 25,
-
-        CALL: 26,
-        RETURN: 27,
-
-        NEWTABLE: 28,
-        GETFIELD: 29,
-        SETFIELD: 30,
-
-        CONCAT: 31,
-
-        PUSH: 32,
-        POP: 33,
-
-        HALT: 34
-    });
-
-    const OPCODE_NAMES = Object.freeze(
-        Object.fromEntries(
-            Object.entries(OPCODES).map(([name, value]) => [value, name])
-        )
-    );
-
-    // ------------------------------------------------------------
-    // Deterministic hashing
-    // ------------------------------------------------------------
-
-    function hashString(input) {
-        input = String(input);
-
-        let h = 2166136261;
-
-        for (let i = 0; i < input.length; i++) {
-            h ^= input.charCodeAt(i);
-            h = Math.imul(h, 16777619);
-        }
-
-        return h >>> 0;
-    }
-
-    // ------------------------------------------------------------
-    // Stable key generation
-    // ------------------------------------------------------------
-
-    function deriveIndex(name, seed, used) {
-        let value = hashString(String(seed) + ":" + name);
-
-        // Keep indices small enough for normal Luau table access.
-        value = (value % 0x7fffffff) + 1;
-
-        while (used.has(value)) {
-            value++;
-
-            if (value >= 0x7fffffff) {
-                value = 1;
-            }
-        }
-
-        used.add(value);
-
-        return value;
-    }
-
-    // ------------------------------------------------------------
-    // Bytecode builder
-    // ------------------------------------------------------------
-
-    class BytecodeBuilder {
-        constructor(options = {}) {
-            this.constants = [];
-            this.constantMap = new Map();
-
-            this.instructions = [];
-
-            this.labels = new Map();
-            this.fixups = [];
-
-            this.options = {
-                seed: options.seed ?? "kn4ght",
-                version: VERSION
-            };
-
-            this.usedIndices = new Set();
-        }
-
-        constant(value) {
-            const key =
-                typeof value + ":" + JSON.stringify(value);
-
-            if (this.constantMap.has(key)) {
-                return this.constantMap.get(key);
-            }
-
-            const index = this.constants.length;
-
-            this.constants.push(value);
-            this.constantMap.set(key, index);
-
-            return index;
-        }
-
-        emit(op, ...args) {
-            if (typeof op === "string") {
-                if (!(op in OPCODES)) {
-                    throw new Error("Unknown opcode: " + op);
-                }
-
-                op = OPCODES[op];
-            }
-
-            const instruction = [op, ...args];
-
-            this.instructions.push(instruction);
-
-            return this.instructions.length - 1;
-        }
-
-        label(name) {
-            this.labels.set(name, this.instructions.length);
-        }
-
-        jump(op, labelName, ...args) {
-            const index = this.emit(op, -1, ...args);
-
-            this.fixups.push({
-                instruction: index,
-                argument: 1,
-                label: labelName
-            });
-
-            return index;
-        }
-
-        resolve() {
-            for (const fixup of this.fixups) {
-                if (!this.labels.has(fixup.label)) {
-                    throw new Error(
-                        "Unknown bytecode label: " + fixup.label
-                    );
-                }
-
-                this.instructions[fixup.instruction][fixup.argument] =
-                    this.labels.get(fixup.label);
-            }
-
-            this.fixups.length = 0;
-
-            return this;
-        }
-
-        numericIndex(name) {
-            return deriveIndex(
-                name,
-                this.options.seed,
-                this.usedIndices
-            );
-        }
-
-        build(metadata = {}) {
-            this.resolve();
-
-            return {
-                version: this.options.version,
-
-                constants: this.constants.slice(),
-
-                instructions: this.instructions.map(
-                    instruction => instruction.slice()
-                ),
-
-                metadata: {
-                    ...metadata
-                }
-            };
-        }
-    }
-
-    // ------------------------------------------------------------
-    // VM function representation
-    // ------------------------------------------------------------
-
-    class VMFunction {
-        constructor(bytecode, options = {}) {
-            this.type = "MV_VM_FUNCTION";
-
-            this.bytecode = bytecode;
-
-            this.name = options.name || null;
-            this.parameters = options.parameters || [];
-
-            this.sourceLine = options.sourceLine ?? null;
-
-            this.flags = {
-                virtualized: true,
-                cff: false,
-                encrypted: false
-            };
-        }
-    }
-
-    // ------------------------------------------------------------
-    // Macro registry
-    // ------------------------------------------------------------
-
-    const MACROS = Object.freeze({
-        MV_VM: "MV_VM",
-        MV_CFF: "MV_CFF",
-        MV_ENC_FUNC: "MV_ENC_FUNC",
-        MV_ENC_STR: "MV_ENC_STR",
-        MV_INDEX_TO_NUM: "MV_INDEX_TO_NUM",
-        MV_OBFUSCATED: "MV_OBFUSCATED",
-        MV_CRASH: "MV_CRASH",
-        MV_OMIT: "MV_OMIT",
-        MV_INLINE: "MV_INLINE",
-        MV_LINE: "MV_LINE",
-        MV_COMPRESS: "MV_COMPRESS",
-
-        LPH_OBFUSCATED: "LPH_OBFUSCATED",
-        LPH_LINE: "LPH_LINE",
-        LPH_CRASH: "LPH_CRASH",
-        LPH_NO_VIRTUALIZE: "LPH_NO_VIRTUALIZE",
-        LPH_ENCFUNC: "LPH_ENCFUNC",
-        LPH_ENCSTR: "LPH_ENCSTR",
-        LPH_ENCNUM: "LPH_ENCNUM",
-        LPH_JIT: "LPH_JIT",
-        LPH_NO_UPVALUES: "LPH_NO_UPVALUES"
-    });
-
-    const ALIASES = Object.freeze({
+    const MACRO_ALIASES = Object.freeze({
         LPH_OBFUSCATED: "MV_OBFUSCATED",
         LPH_LINE: "MV_LINE",
         LPH_CRASH: "MV_CRASH",
         LPH_NO_VIRTUALIZE: "MV_OMIT",
-        LPH_ENCFUNC: "MV_ENC_FUNC"
+        LPH_ENCFUNC: "MV_ENC_FUNC",
+        LPH_ENCSTR: "MV_ENC_STR"
     });
 
-    const COMPAT_NOOPS = new Set([
-        "LPH_ENCSTR",
+    const IGNORED_MACROS = new Set([
         "LPH_ENCNUM",
         "LPH_JIT",
         "LPH_NO_UPVALUES"
     ]);
 
-    // ------------------------------------------------------------
-    // Macro normalization
-    // ------------------------------------------------------------
+    const VALID_MACROS = new Set([
+        "MV_VM",
+        "MV_CFF",
+        "MV_ENC_FUNC",
+        "MV_ENC_STR",
+        "MV_INDEX_TO_NUM",
+        "MV_OBFUSCATED",
+        "MV_CRASH",
+        "MV_OMIT",
+        "MV_INLINE",
+        "MV_LINE",
+        "MV_COMPRESS"
+    ]);
+
+    // --------------------------------------------------------
+    // Normalize a macro name
+    // --------------------------------------------------------
 
     function normalizeMacro(name) {
-        name = String(name);
+        if (!name) {
+            return null;
+        }
 
-        if (ALIASES[name]) {
-            return ALIASES[name];
+        if (
+            Object.prototype.hasOwnProperty.call(
+                MACRO_ALIASES,
+                name
+            )
+        ) {
+            return MACRO_ALIASES[name];
+        }
+
+        if (IGNORED_MACROS.has(name)) {
+            return null;
+        }
+
+        if (VALID_MACROS.has(name)) {
+            return name;
         }
 
         return name;
     }
 
-    function isMacro(name) {
-        return Object.prototype.hasOwnProperty.call(
-            MACROS,
-            name
-        );
-    }
-
-    function isCompatibilityNoop(name) {
-        return COMPAT_NOOPS.has(name);
-    }
-
-    // ------------------------------------------------------------
-    // Comment directive parser
-    // ------------------------------------------------------------
+    // --------------------------------------------------------
+    // Parse comment directives
+    //
+    // Examples:
+    // --!mv:vm
+    // --!mv:cff true true 10
+    // --!mv:omit
+    // --------------------------------------------------------
 
     function parseDirective(line) {
         if (typeof line !== "string") {
             return null;
         }
 
-        const match = line.match(
-            /^\s*--!mv:([a-z_]+)(?:\s+(.*?))?\s*$/
-        );
+        const match =
+            line.match(
+                /^\s*--!mv:([a-z_]+)(?:\s+(.*?))?\s*$/
+            );
 
         if (!match) {
             return null;
         }
 
-        const rawName = "MV_" + match[1].toUpperCase();
+        const name =
+            "MV_" +
+            match[1].toUpperCase();
 
-        const argumentText = match[2] || "";
+        const argumentText =
+            match[2] || "";
 
-        const args = argumentText
-            .trim()
-            .split(/\s+/)
-            .filter(Boolean)
-            .map(value => {
-                if (value === "true") return true;
-                if (value === "false") return false;
+        const args =
+            argumentText
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean)
+                .map(value => {
+                    if (value === "true") {
+                        return true;
+                    }
 
-                const number = Number(value);
+                    if (value === "false") {
+                        return false;
+                    }
 
-                return Number.isFinite(number)
-                    ? number
-                    : value;
-            });
+                    if (
+                        /^-?\d+(?:\.\d+)?$/.test(
+                            value
+                        )
+                    ) {
+                        return Number(value);
+                    }
+
+                    return value;
+                });
 
         return {
-            name: normalizeMacro(rawName),
-            args
+            name,
+            args,
+            raw: line
         };
     }
 
-    // ------------------------------------------------------------
-    // Function metadata
-    // ------------------------------------------------------------
+    // --------------------------------------------------------
+    // Function information
+    // --------------------------------------------------------
 
     class FunctionInfo {
         constructor(options = {}) {
-            this.name = options.name || null;
+            this.name =
+                options.name || null;
 
             this.line =
-                Number.isFinite(options.line)
-                    ? options.line
-                    : null;
+                options.line || 0;
 
-            this.parameters =
-                Array.isArray(options.parameters)
-                    ? options.parameters.slice()
-                    : [];
+            this.macros = [];
 
-            this.body = options.body || "";
+            this.virtualize = false;
 
-            this.macros = new Set();
+            this.controlFlowFlatten = false;
+
+            this.mangleExpressions = false;
+
+            this.controlFlowPercent = 0;
+
+            this.encrypt = false;
 
             this.omit = false;
+
             this.inline = false;
-
-            this.vm = false;
-            this.cff = false;
-            this.encFunc = false;
-
-            this.cffOptions = {
-                decompose: false,
-                mangleExpr: false,
-                cfManglePercent: 0
-            };
         }
 
         applyMacro(name, args = []) {
-            name = normalizeMacro(name);
+            const macro =
+                normalizeMacro(name);
 
-            switch (name) {
+            if (!macro) {
+                return this;
+            }
+
+            this.macros.push({
+                name: macro,
+                args
+            });
+
+            switch (macro) {
                 case "MV_VM":
-                    this.vm = true;
+                    this.virtualize = true;
                     break;
 
                 case "MV_CFF":
-                    this.cff = true;
-
-                    this.cffOptions.decompose =
+                    this.controlFlowFlatten =
                         args[0] === true;
 
-                    this.cffOptions.mangleExpr =
+                    this.mangleExpressions =
                         args[1] === true;
 
-                    if (typeof args[2] === "number") {
-                        this.cffOptions.cfManglePercent =
-                            Math.max(
-                                0,
-                                Math.min(100, args[2])
-                            );
-                    }
+                    this.controlFlowPercent =
+                        Number(args[2] || 0);
 
                     break;
 
                 case "MV_ENC_FUNC":
-                    this.encFunc = true;
+                    this.encrypt = true;
                     break;
 
                 case "MV_OMIT":
                     this.omit = true;
-
-                    // Explicit omit wins over protection.
-                    this.vm = false;
-                    this.cff = false;
-                    this.encFunc = false;
-
                     break;
 
                 case "MV_INLINE":
@@ -437,356 +204,618 @@
                     break;
             }
 
-            this.macros.add(name);
+            return this;
         }
     }
 
-    // ------------------------------------------------------------
-    // CFF state-machine helper
-    //
-    // This produces an intermediate representation only.
-    // compiler.js is responsible for converting the IR into Luau.
-    // ------------------------------------------------------------
+     // ============================================================
+    // VM Compiler Context
+    // ============================================================
 
-    function createCFFPlan(options = {}) {
-        const decompose = options.decompose === true;
+    class VMCompilerContext {
+        constructor(options = {}) {
+            this.seed =
+                options.seed ||
+                createSeed();
 
-        const mangleExpr =
-            options.mangleExpr === true;
+            this.functions = [];
 
-        const percent =
-            Math.max(
-                0,
-                Math.min(
-                    100,
-                    Number(options.cfManglePercent) || 0
+            this.metadata = {};
+
+            this.instructions = [];
+        }
+
+        addFunction(fn) {
+            if (!(fn instanceof FunctionInfo)) {
+                throw new TypeError(
+                    "Expected FunctionInfo."
+                );
+            }
+
+            this.functions.push(fn);
+
+            return fn;
+        }
+
+        addInstruction(opcode, operands = []) {
+            this.instructions.push({
+                opcode,
+                operands
+            });
+
+            return this.instructions.length - 1;
+        }
+
+        setMetadata(key, value) {
+            this.metadata[key] = value;
+        }
+
+        build(metadata = {}) {
+            return {
+                version: VERSION,
+
+                seed: this.seed,
+
+                functions:
+                    this.functions.map(fn => ({
+                        name: fn.name,
+                        line: fn.line,
+
+                        virtualize:
+                            fn.virtualize,
+
+                        controlFlowFlatten:
+                            fn.controlFlowFlatten,
+
+                        mangleExpressions:
+                            fn.mangleExpressions,
+
+                        controlFlowPercent:
+                            fn.controlFlowPercent,
+
+                        encrypt:
+                            fn.encrypt,
+
+                        omit:
+                            fn.omit,
+
+                        inline:
+                            fn.inline,
+
+                        macros:
+                            fn.macros
+                    })),
+
+                instructions:
+                    this.instructions.slice(),
+
+                metadata: {
+                    ...this.metadata,
+                    ...metadata
+                }
+            };
+        }
+    }
+
+    // ============================================================
+    // Utility helpers
+    // ============================================================
+
+    function createSeed() {
+        const chars =
+            "abcdefghijklmnopqrstuvwxyz" +
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+            "0123456789";
+
+        let result = "";
+
+        for (let i = 0; i < 32; i++) {
+            result += chars[
+                Math.floor(
+                    Math.random() * chars.length
                 )
-            );
-
-        return {
-            type: "CFF_PLAN",
-
-            decompose,
-            mangleExpr,
-            cfManglePercent: percent,
-
-            states: [],
-
-            fakeBranchCount: Math.floor(percent / 10)
-        };
-    }
-
-    // ------------------------------------------------------------
-    // String encoding helper
-    //
-    // This is intentionally an encoding primitive, not a claim of
-    // cryptographic security. The runtime implementation can decode
-    // the generated representation.
-    // ------------------------------------------------------------
-
-    function xorBytes(bytes, key) {
-        const keyBytes =
-            new TextEncoder().encode(String(key));
-
-        if (keyBytes.length === 0) {
-            throw new Error("Encryption key cannot be empty");
+            ];
         }
 
-        const output = new Uint8Array(bytes.length);
+        return result;
+    }
 
-        for (let i = 0; i < bytes.length; i++) {
-            output[i] =
-                bytes[i] ^
-                keyBytes[i % keyBytes.length];
+    function randomIdentifier(length = 8) {
+        const first =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        const rest =
+            first + "0123456789";
+
+        let result =
+            first[
+                Math.floor(
+                    Math.random() * first.length
+                )
+            ];
+
+        for (let i = 1; i < length; i++) {
+            result += rest[
+                Math.floor(
+                    Math.random() * rest.length
+                )
+            ];
+        }
+
+        return result;
+    }
+
+    function escapeString(value) {
+        return String(value)
+            .replace(/\\/g, "\\\\")
+            .replace(/"/g, '\\"')
+            .replace(/\r/g, "\\r")
+            .replace(/\n/g, "\\n")
+            .replace(/\t/g, "\\t");
+    }
+
+    function encodeString(value) {
+        const input = String(value);
+
+        let output = "";
+
+        for (let i = 0; i < input.length; i++) {
+            output +=
+                input.charCodeAt(i).toString(16)
+                    .padStart(2, "0");
         }
 
         return output;
     }
 
-    function bytesToBase64(bytes) {
-        let binary = "";
+    // ============================================================
+    // Public VM object
+    // ============================================================
 
-        const chunk = 0x8000;
+    const Kn4ghtVM = {
+        VERSION,
 
-        for (let i = 0; i < bytes.length; i += chunk) {
-            binary += String.fromCharCode(
-                ...bytes.subarray(i, i + chunk)
+        MACRO_ALIASES,
+
+        VALID_MACROS,
+
+        normalizeMacro,
+
+        parseDirective,
+
+        FunctionInfo,
+
+        VMCompilerContext,
+
+        createSeed,
+
+        randomIdentifier,
+
+        escapeString,
+
+        encodeString
+    };
+
+    global.Kn4ghtVM = Kn4ghtVM;
+
+})(window);
+
+// ============================================================
+// SYTES OBFUSCATOR
+// vm.js - Part 3
+// VM instruction helpers
+// ============================================================
+
+(function (global) {
+    "use strict";
+
+    const VM = global.Kn4ghtVM;
+
+    if (!VM) {
+        throw new Error(
+            "Kn4ghtVM Part 1/2 must be loaded first."
+        );
+    }
+
+    const OPCODES = Object.freeze({
+        NOP: 0,
+        LOADK: 1,
+        MOVE: 2,
+        GETGLOBAL: 3,
+        SETGLOBAL: 4,
+        GETTABLE: 5,
+        SETTABLE: 6,
+        ADD: 7,
+        SUB: 8,
+        MUL: 9,
+        DIV: 10,
+        MOD: 11,
+        POW: 12,
+        EQ: 13,
+        LT: 14,
+        LE: 15,
+        JMP: 16,
+        TEST: 17,
+        CALL: 18,
+        RETURN: 19,
+        CLOSURE: 20
+    });
+
+    class Instruction {
+        constructor(opcode, operands = []) {
+            this.opcode = opcode;
+            this.operands = operands.slice();
+        }
+
+        toJSON() {
+            return {
+                opcode: this.opcode,
+                operands: this.operands.slice()
+            };
+        }
+    }
+
+    class InstructionBuilder {
+        constructor() {
+            this.instructions = [];
+        }
+
+        emit(opcode, ...operands) {
+            const instruction =
+                new Instruction(
+                    opcode,
+                    operands
+                );
+
+            this.instructions.push(
+                instruction
             );
+
+            return this.instructions.length - 1;
         }
 
-        return btoa(binary);
-    }
-
-    function encodeString(value, key) {
-        const bytes =
-            new TextEncoder().encode(String(value));
-
-        const encrypted =
-            xorBytes(bytes, key);
-
-        return bytesToBase64(encrypted);
-    }
-
-    // ------------------------------------------------------------
-    // Public encoder helpers
-    // ------------------------------------------------------------
-
-    function encodeFunctionPlaceholder(source, options = {}) {
-        return {
-            type: "ENC_FUNC",
-            algorithm: "xor-base64",
-            keyId: hashString(
-                options.key || "build"
-            ).toString(16),
-
-            payload: String(source)
-        };
-    }
-
-    function encodeStringLiteral(value, key) {
-        return {
-            type: "ENC_STR",
-            algorithm: "xor-base64",
-            data: encodeString(value, key)
-        };
-    }
-
-    // ------------------------------------------------------------
-    // Index transformation helper
-    // ------------------------------------------------------------
-
-    class IndexMapper {
-        constructor(seed = "kn4ght") {
-            this.seed = seed;
-            this.map = new Map();
-            this.used = new Set();
-        }
-
-        get(name) {
-            name = String(name);
-
-            if (!this.map.has(name)) {
-                this.map.set(
-                    name,
-                    deriveIndex(
-                        name,
-                        this.seed,
-                        this.used
-                    )
+        patch(index, ...operands) {
+            if (
+                index < 0 ||
+                index >= this.instructions.length
+            ) {
+                throw new RangeError(
+                    "Invalid instruction index."
                 );
             }
 
-            return this.map.get(name);
+            this.instructions[index].operands =
+                operands;
+
+            return this;
         }
 
-        entries() {
-            return Array.from(this.map.entries());
+        get length() {
+            return this.instructions.length;
+        }
+
+        build() {
+            return this.instructions.map(
+                instruction =>
+                    instruction.toJSON()
+            );
         }
     }
 
-    // ------------------------------------------------------------
-    // Bytecode serializer
-    // ------------------------------------------------------------
-
-    function serializeBytecode(bytecode) {
-        if (!bytecode || typeof bytecode !== "object") {
-            throw new TypeError(
-                "Invalid bytecode object"
-            );
-        }
-
-        return JSON.stringify(bytecode);
+    function createInstructionBuilder() {
+        return new InstructionBuilder();
     }
 
-    function deserializeBytecode(serialized) {
-        const result =
-            typeof serialized === "string"
-                ? JSON.parse(serialized)
-                : serialized;
-
-        if (!result || typeof result !== "object") {
-            throw new Error(
-                "Invalid serialized bytecode"
-            );
+    function opcodeName(value) {
+        for (const key of Object.keys(OPCODES)) {
+            if (OPCODES[key] === value) {
+                return key;
+            }
         }
 
-        if (!Array.isArray(result.constants)) {
-            throw new Error(
-                "Bytecode constants must be an array"
-            );
+        return "UNKNOWN";
+    }
+
+    function encodeInstructions(instructions) {
+        return instructions.map(
+            instruction => ({
+                opcode: instruction.opcode,
+                operands:
+                    instruction.operands
+            })
+        );
+    }
+
+    VM.OPCODES = OPCODES;
+    VM.Instruction = Instruction;
+    VM.InstructionBuilder =
+        InstructionBuilder;
+    VM.createInstructionBuilder =
+        createInstructionBuilder;
+    VM.opcodeName =
+        opcodeName;
+    VM.encodeInstructions =
+        encodeInstructions;
+
+})(window);
+
+// ============================================================
+// SYTES OBFUSCATOR
+// vm.js - Part 4
+// Macro metadata + source transformation helpers
+// ============================================================
+
+(function (global) {
+    "use strict";
+
+    const VM = global.Kn4ghtVM;
+
+    if (!VM) {
+        throw new Error(
+            "Kn4ghtVM is not initialized."
+        );
+    }
+
+    function parseMacroArguments(text) {
+        if (!text) {
+            return [];
         }
 
-        if (!Array.isArray(result.instructions)) {
-            throw new Error(
-                "Bytecode instructions must be an array"
+        const result = [];
+        let current = "";
+        let quote = null;
+        let escaped = false;
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+
+            if (escaped) {
+                current += char;
+                escaped = false;
+                continue;
+            }
+
+            if (char === "\\") {
+                current += char;
+                escaped = true;
+                continue;
+            }
+
+            if (quote) {
+                current += char;
+
+                if (char === quote) {
+                    quote = null;
+                }
+
+                continue;
+            }
+
+            if (
+                char === '"' ||
+                char === "'"
+            ) {
+                quote = char;
+                current += char;
+                continue;
+            }
+
+            if (/\s/.test(char)) {
+                if (current.trim()) {
+                    result.push(
+                        convertMacroArgument(
+                            current.trim()
+                        )
+                    );
+
+                    current = "";
+                }
+
+                continue;
+            }
+
+            current += char;
+        }
+
+        if (current.trim()) {
+            result.push(
+                convertMacroArgument(
+                    current.trim()
+                )
             );
         }
 
         return result;
     }
 
-    // ------------------------------------------------------------
-    // Development-side bytecode verifier
-    // ------------------------------------------------------------
-
-    function verifyBytecode(bytecode) {
-        if (!bytecode) {
-            throw new Error("Missing bytecode");
+    function convertMacroArgument(value) {
+        if (value === "true") {
+            return true;
         }
 
-        if (bytecode.version !== VERSION) {
-            throw new Error(
-                "Unsupported bytecode version: " +
-                bytecode.version
-            );
+        if (value === "false") {
+            return false;
         }
 
-        if (!Array.isArray(bytecode.constants)) {
-            throw new Error(
-                "Invalid constants table"
-            );
+        if (value === "nil") {
+            return null;
         }
 
-        if (!Array.isArray(bytecode.instructions)) {
-            throw new Error(
-                "Invalid instruction table"
-            );
-        }
-
-        for (
-            let i = 0;
-            i < bytecode.instructions.length;
-            i++
+        if (
+            /^-?(?:\d+\.?\d*|\.\d+)$/.test(
+                value
+            )
         ) {
-            const instruction =
-                bytecode.instructions[i];
-
-            if (!Array.isArray(instruction) ||
-                instruction.length === 0) {
-                throw new Error(
-                    "Invalid instruction at " + i
-                );
-            }
-
-            const opcode = instruction[0];
-
-            if (
-                typeof opcode !== "number" ||
-                !Object.prototype.hasOwnProperty.call(
-                    OPCODE_NAMES,
-                    opcode
-                )
-            ) {
-                throw new Error(
-                    "Invalid opcode at " + i
-                );
-            }
+            return Number(value);
         }
 
-        return true;
+        return value;
     }
 
-    // ------------------------------------------------------------
-    // Compiler context
-    // ------------------------------------------------------------
+    function collectDirectives(source) {
+        const directives = [];
+        const lines =
+            source.split(/\r?\n/);
 
-    class VMCompilerContext {
-        constructor(options = {}) {
-            this.options = {
-                seed: options.seed || "kn4ght",
-                version: VERSION
-            };
-
-            this.builder =
-                new BytecodeBuilder(this.options);
-
-            this.functions = [];
-
-            this.indexMapper =
-                new IndexMapper(this.options.seed);
-
-            this.sourceMap = [];
-        }
-
-        addFunction(info) {
-            if (!(info instanceof FunctionInfo)) {
-                throw new TypeError(
-                    "Expected FunctionInfo"
+        for (
+            let index = 0;
+            index < lines.length;
+            index++
+        ) {
+            const parsed =
+                VM.parseDirective(
+                    lines[index]
                 );
+
+            if (!parsed) {
+                continue;
             }
 
-            this.functions.push(info);
-
-            return info;
-        }
-
-        addSourceLocation(generatedLine, sourceLine) {
-            this.sourceMap.push({
-                generatedLine,
-                sourceLine
+            directives.push({
+                name: parsed.name,
+                args: parsed.args,
+                line: index + 1,
+                raw: lines[index]
             });
         }
 
-        build(metadata = {}) {
-            const bytecode =
-                this.builder.build({
-                    ...metadata,
+        return directives;
+    }
 
-                    functionCount:
-                        this.functions.length,
+    function hasDirective(
+        directives,
+        name,
+        line
+    ) {
+        return directives.some(
+            directive =>
+                directive.name === name &&
+                (
+                    line === undefined ||
+                    directive.line === line
+                )
+        );
+    }
 
-                    sourceMap:
-                        this.sourceMap.slice()
-                });
+    function getDirective(
+        directives,
+        name,
+        line
+    ) {
+        return directives.find(
+            directive =>
+                directive.name === name &&
+                (
+                    line === undefined ||
+                    directive.line === line
+                )
+        ) || null;
+    }
 
-            verifyBytecode(bytecode);
+    function createMacroMetadata(
+        directives
+    ) {
+        return directives.map(
+               // ============================================================
+    // Macro aliases and compatibility helpers
+    // ============================================================
 
-            return bytecode;
+    function isMacro(name) {
+        if (!name) {
+            return false;
         }
+
+        const normalized =
+            VM.normalizeMacro(name);
+
+        return (
+            normalized !== null &&
+            (
+                VM.VALID_MACROS.has(normalized) ||
+                VM.MACRO_ALIASES[name] !== undefined
+            )
+        );
+    }
+
+    function isIgnoredMacro(name) {
+        return VM.IGNORED_MACROS
+            ? VM.IGNORED_MACROS.has(name)
+            : (
+                name === "LPH_ENCNUM" ||
+                name === "LPH_JIT" ||
+                name === "LPH_NO_UPVALUES"
+            );
+    }
+
+    function getMacroName(name) {
+        return VM.normalizeMacro(name);
     }
 
     // ------------------------------------------------------------
-    // Public API
+    // Simple source metadata
     // ------------------------------------------------------------
 
-    const Kn4ghtVM = {
-        VERSION,
+    function getLineNumber(source, index) {
+        if (
+            typeof source !== "string" ||
+            typeof index !== "number"
+        ) {
+            return 1;
+        }
 
-        OPCODES,
-        OPCODE_NAMES,
+        let line = 1;
 
-        MACROS,
-        ALIASES,
+        for (
+            let i = 0;
+            i < index &&
+            i < source.length;
+            i++
+        ) {
+            if (source[i] === "\n") {
+                line++;
+            }
+        }
 
-        BytecodeBuilder,
-        VMFunction,
-        FunctionInfo,
-        VMCompilerContext,
-        IndexMapper,
+        return line;
+    }
 
-        normalizeMacro,
-        isMacro,
-        isCompatibilityNoop,
+    function getSourceInfo(source) {
+        const text =
+            typeof source === "string"
+                ? source
+                : "";
 
-        parseDirective,
+        return {
+            lines:
+                text.split(/\r?\n/).length,
 
-        createCFFPlan,
+            characters:
+                text.length,
 
-        encodeString,
-        encodeStringLiteral,
-        encodeFunctionPlaceholder,
-
-        serializeBytecode,
-        deserializeBytecode,
-        verifyBytecode,
-
-        hashString
-    };
+            bytes:
+                new TextEncoder()
+                    .encode(text)
+                    .length
+        };
+    }
 
     // ------------------------------------------------------------
-    // Browser export
+    // Expose helpers
     // ------------------------------------------------------------
 
-    global.Kn4ghtVM = Kn4ghtVM;
+    VM.isMacro =
+        isMacro;
+
+    VM.isIgnoredMacro =
+        isIgnoredMacro;
+
+    VM.getMacroName =
+        getMacroName;
+
+    VM.getLineNumber =
+        getLineNumber;
+
+    VM.getSourceInfo =
+        getSourceInfo;
 
 })(window);
