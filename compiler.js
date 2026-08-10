@@ -1,6 +1,7 @@
 // ============================================================
-// KN4GHT SYTES OBFUSCATOR
-// compiler.js - Part 1
+// SYTES OBFUSCATOR
+// compiler.js
+// Macro-aware Luau source compiler foundation
 // ============================================================
 
 (function (global) {
@@ -10,91 +11,186 @@
 
     if (!VM) {
         throw new Error(
-            "Kn4ghtVM was not loaded. Load vm.js before compiler.js."
+            "vm.js must be loaded before compiler.js"
         );
     }
 
-    class CompilerError extends Error {
-        constructor(message, line = null, column = null) {
-            super(
-                line !== null
-                    ? `${message} (line ${line}${column !== null ? `, column ${column}` : ""})`
-                    : message
-            );
+    // ------------------------------------------------------------
+    // Utilities
+    // ------------------------------------------------------------
 
-            this.name = "CompilerError";
-            this.line = line;
-            this.column = column;
-        }
+    function isIdentifierStart(char) {
+        return /[A-Za-z_]/.test(char);
     }
 
-    const TOKEN = Object.freeze({
-        IDENTIFIER: "identifier",
-        NUMBER: "number",
-        STRING: "string",
-        SYMBOL: "symbol",
-        COMMENT: "comment",
-        WHITESPACE: "whitespace",
-        EOF: "eof"
-    });
+    function isIdentifierPart(char) {
+        return /[A-Za-z0-9_]/.test(char);
+    }
 
-    function lineOf(source, index) {
-        let line = 1;
+    function isLuaKeyword(name) {
+        return new Set([
+            "and",
+            "break",
+            "do",
+            "else",
+            "elseif",
+            "end",
+            "false",
+            "for",
+            "function",
+            "if",
+            "in",
+            "local",
+            "nil",
+            "not",
+            "or",
+            "repeat",
+            "return",
+            "then",
+            "true",
+            "until",
+            "while",
+            "continue"
+        ]).has(name);
+    }
 
-        for (let i = 0; i < index; i++) {
-            if (source.charCodeAt(i) === 10) {
-                line++;
+    function makeNameGenerator(seed) {
+        let state = 0;
+
+        for (let i = 0; i < seed.length; i++) {
+            state =
+                (
+                    state * 31 +
+                    seed.charCodeAt(i)
+                ) >>> 0;
+        }
+
+        return function () {
+            state =
+                (
+                    state * 1664525 +
+                    1013904223
+                ) >>> 0;
+
+            const chars =
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+            let value = "_";
+
+            for (let i = 0; i < 6; i++) {
+                state =
+                    (
+                        state * 1664525 +
+                        1013904223
+                    ) >>> 0;
+
+                value +=
+                    chars[
+                        state % chars.length
+                    ];
             }
-        }
 
-        return line;
+            return value;
+        };
     }
 
-    function columnOf(source, index) {
-        return index - source.lastIndexOf("\n", index);
-    }
+    // ------------------------------------------------------------
+    // Identifier scanner
+    //
+    // This deliberately avoids changing strings/comments.
+    // ------------------------------------------------------------
 
-    function tokenize(source) {
-        const tokens = [];
+    function renameIdentifiers(
+        source,
+        reserved,
+        seed
+    ) {
+        const nextName =
+            makeNameGenerator(seed);
+
+        const replacements =
+            new Map();
+
+        const keywords =
+            new Set([
+                "and",
+                "break",
+                "do",
+                "else",
+                "elseif",
+                "end",
+                "false",
+                "for",
+                "function",
+                "if",
+                "in",
+                "local",
+                "nil",
+                "not",
+                "or",
+                "repeat",
+                "return",
+                "then",
+                "true",
+                "until",
+                "while",
+                "continue"
+            ]);
+
+        let output = "";
         let i = 0;
 
-        function push(type, value, start, end) {
-            tokens.push({
-                type: type,
-                value: value,
-                start: start,
-                end: end,
-                line: lineOf(source, start),
-                column: columnOf(source, start)
-            });
-        }
+        let quote = null;
+        let longComment = false;
 
         while (i < source.length) {
-            const start = i;
-            const ch = source[i];
+            const char = source[i];
 
-            if (/\s/.test(ch)) {
-                i++;
+            // ----------------------------------------------------
+            // Strings
+            // ----------------------------------------------------
 
-                while (
-                    i < source.length &&
-                    /\s/.test(source[i])
-                ) {
+            if (quote) {
+                output += char;
+
+                if (char === "\\") {
                     i++;
+
+                    if (i < source.length) {
+                        output += source[i];
+                    }
+
+                    i++;
+                    continue;
                 }
 
-                push(
-                    TOKEN.WHITESPACE,
-                    source.slice(start, i),
-                    start,
-                    i
-                );
+                if (char === quote) {
+                    quote = null;
+                }
 
+                i++;
                 continue;
             }
 
-            if (source.startsWith("--", i)) {
-                i += 2;
+            if (
+                char === '"' ||
+                char === "'"
+            ) {
+                quote = char;
+                output += char;
+                i++;
+                continue;
+            }
+
+            // ----------------------------------------------------
+            // Comments
+            // ----------------------------------------------------
+
+            if (
+                char === "-" &&
+                source[i + 1] === "-"
+            ) {
+                const start = i;
 
                 while (
                     i < source.length &&
@@ -103,345 +199,135 @@
                     i++;
                 }
 
-                push(
-                    TOKEN.COMMENT,
-                    source.slice(start, i),
-                    start,
-                    i
-                );
+                output +=
+                    source.slice(start, i);
 
                 continue;
             }
 
-            if (
-                ch === '"' ||
-                ch === "'"
-            ) {
-                const quote = ch;
+            // ----------------------------------------------------
+            // Identifier
+            // ----------------------------------------------------
+
+            if (isIdentifierStart(char)) {
+                const start = i;
 
                 i++;
 
-                while (i < source.length) {
-                    if (source[i] === "\\") {
-                        i += 2;
-                        continue;
-                    }
-
-                    if (source[i] === quote) {
-                        i++;
-                        break;
-                    }
-
+                while (
+                    i < source.length &&
+                    isIdentifierPart(source[i])
+                ) {
                     i++;
                 }
 
-                push(
-                    TOKEN.STRING,
-                    source.slice(start, i),
-                    start,
-                    i
-                );
+                const name =
+                    source.slice(start, i);
 
-                continue;
-            }
-
-            if (source.startsWith("[[", i)) {
-                const close =
-                    source.indexOf("]]", i + 2);
-
-                if (close !== -1) {
-                    i = close + 2;
-
-                    push(
-                        TOKEN.STRING,
-                        source.slice(start, i),
-                        start,
-                        i
-                    );
-
+                if (
+                    keywords.has(name) ||
+                    reserved.has(name) ||
+                    name.startsWith("MV_") ||
+                    name.startsWith("LPH_")
+                ) {
+                    output += name;
                     continue;
                 }
-            }
 
-            if (/[0-9]/.test(ch)) {
-                i++;
+                if (!replacements.has(name)) {
+                    let generated;
 
-                while (
-                    i < source.length &&
-                    /[0-9A-Fa-f.xXpPeE_]/.test(
-                        source[i]
-                    )
-                ) {
-                    i++;
+                    do {
+                        generated =
+                            nextName();
+                    } while (
+                        reserved.has(generated) ||
+                        keywords.has(generated)
+                    );
+
+                    replacements.set(
+                        name,
+                        generated
+                    );
                 }
 
-                push(
-                    TOKEN.NUMBER,
-                    source.slice(start, i),
-                    start,
-                    i
-                );
+                output +=
+                    replacements.get(name);
 
                 continue;
             }
 
-            if (/[A-Za-z_]/.test(ch)) {
-                i++;
-
-                while (
-                    i < source.length &&
-                    /[A-Za-z0-9_]/.test(
-                        source[i]
-                    )
-                ) {
-                    i++;
-                }
-
-                push(
-                    TOKEN.IDENTIFIER,
-                    source.slice(start, i),
-                    start,
-                    i
-                );
-
-                continue;
-            }
-
-            const three =
-                source.slice(i, i + 3);
-
-            const two =
-                source.slice(i, i + 2);
-
-            if (three === "...") {
-                i += 3;
-            } else if (
-                [
-                    "==",
-                    "~=",
-                    "<=",
-                    ">=",
-                    "..",
-                    "//",
-                    "<<",
-                    ">>",
-                    "+=",
-                    "-=",
-                    "*=",
-                    "/=",
-                    "%=",
-                    "::"
-                ].includes(two)
-            ) {
-                i += 2;
-            } else {
-                i++;
-            }
-
-            push(
-                TOKEN.SYMBOL,
-                source.slice(start, i),
-                start,
-                i
-            );
+            output += char;
+            i++;
         }
 
-        push(
-            TOKEN.EOF,
-            "",
-            source.length,
-            source.length
-        );
-
-        return tokens;
-                }
-
- // ============================================================
-// compiler.js - Part 2
-// Macro detection and function analysis
-// ============================================================
-
-    const FUNCTION_MACROS = new Set([
-        "MV_VM",
-        "MV_CFF",
-        "MV_ENC_FUNC",
-        "MV_OMIT",
-        "MV_INLINE"
-    ]);
-
-    const ALL_MACROS = new Set([
-        "MV_VM",
-        "MV_CFF",
-        "MV_ENC_FUNC",
-        "MV_ENC_STR",
-        "MV_INDEX_TO_NUM",
-        "MV_OBFUSCATED",
-        "MV_CRASH",
-        "MV_OMIT",
-        "MV_INLINE",
-        "MV_LINE",
-        "MV_COMPRESS",
-
-        "LPH_OBFUSCATED",
-        "LPH_LINE",
-        "LPH_CRASH",
-        "LPH_NO_VIRTUALIZE",
-        "LPH_ENCFUNC",
-        "LPH_ENCSTR",
-        "LPH_ENCNUM",
-        "LPH_JIT",
-        "LPH_NO_UPVALUES"
-    ]);
-
-    function findMacroCalls(source, tokens) {
-        const result = [];
-
-        for (let i = 0; i < tokens.length - 1; i++) {
-            const token = tokens[i];
-
-            if (
-                token.type !== TOKEN.IDENTIFIER ||
-                !ALL_MACROS.has(token.value)
-            ) {
-                continue;
-            }
-
-            let j = i + 1;
-
-            while (
-                j < tokens.length &&
-                tokens[j].type === TOKEN.WHITESPACE
-            ) {
-                j++;
-            }
-
-            const next = tokens[j];
-
-            const normalized =
-                VM.normalizeMacro(token.value);
-
-            result.push({
-                originalName: token.value,
-
-                normalizedName: normalized,
-
-                type:
-                    FUNCTION_MACROS.has(normalized)
-                        ? "function"
-                        : "value",
-
-                hasCall:
-                    !!next &&
-                    next.type === TOKEN.SYMBOL &&
-                    next.value === "(",
-
-                start: token.start,
-                end: token.end,
-
-                line: token.line,
-                column: token.column
-            });
-        }
-
-        return result;
+        return {
+            code: output,
+            replacements
+        };
     }
 
-    function findDirectives(source) {
+    // ------------------------------------------------------------
+    // Macro preprocessing
+    // ------------------------------------------------------------
+
+    function processDirectives(source) {
         const lines =
             source.split(/\r?\n/);
 
         const directives = [];
+        const output = [];
 
         for (
             let i = 0;
             i < lines.length;
             i++
         ) {
-            const parsed =
-                VM.parseDirective(lines[i]);
+            const line = lines[i];
 
-            if (!parsed) {
+            const directive =
+                VM.parseDirective(line);
+
+            if (directive) {
+                directives.push({
+                    name: directive.name,
+                    args: directive.args,
+                    line: i + 1
+                });
+
+                // Remove compiler directives from
+                // generated source.
                 continue;
             }
 
-            directives.push({
-                ...parsed,
-
-                line: i + 1,
-
-                source: lines[i]
-            });
+            output.push(line);
         }
 
-        return directives;
+        return {
+            code: output.join("\n"),
+            directives
+        };
     }
 
-    function findFunctions(
-        source,
-        tokens,
+    // ------------------------------------------------------------
+    // Function-level macro metadata
+    // ------------------------------------------------------------
+
+    function buildFunctionMetadata(
         directives
     ) {
         const functions = [];
 
-        const directiveMap =
-            new Map();
-
         for (const directive of directives) {
-            directiveMap.set(
-                directive.line,
-                directive
-            );
-        }
-
-        for (
-            let i = 0;
-            i < tokens.length;
-            i++
-        ) {
-            const token = tokens[i];
-
-            if (
-                token.type !== TOKEN.IDENTIFIER ||
-                token.value !== "function"
-            ) {
-                continue;
-            }
-
-            let j = i + 1;
-
-            while (
-                j < tokens.length &&
-                tokens[j].type === TOKEN.WHITESPACE
-            ) {
-                j++;
-            }
-
-            let name = null;
-
-            if (
-                tokens[j] &&
-                tokens[j].type === TOKEN.IDENTIFIER
-            ) {
-                name = tokens[j].value;
-            }
-
             const info =
                 new VM.FunctionInfo({
-                    name: name,
-                    line: token.line
+                    line: directive.line
                 });
 
-            const directive =
-                directiveMap.get(
-                    token.line - 1
-                );
-
-            if (directive) {
-                info.applyMacro(
-                    directive.name,
-                    directive.args
-                );
-            }
+            info.applyMacro(
+                directive.name,
+                directive.args
+            );
 
             functions.push(info);
         }
@@ -449,339 +335,330 @@
         return functions;
     }
 
-    function normalizeAliases(source) {
-        return source
-            .replace(
-                /\bLPH_OBFUSCATED\b/g,
-                "MV_OBFUSCATED"
-            )
-            .replace(
-                /\bLPH_LINE\b/g,
-                "MV_LINE"
-            )
-            .replace(
-                /\bLPH_CRASH\b/g,
-                "MV_CRASH"
-            )
-            .replace(
-                /\bLPH_NO_VIRTUALIZE\b/g,
-                "MV_OMIT"
-            )
-            .replace(
-                /\bLPH_ENCFUNC\b/g,
-                "MV_ENC_FUNC"
-            );
-            }
+    // ------------------------------------------------------------
+    // MV_OBFUSCATED
+    // ------------------------------------------------------------
 
-     // ============================================================
-    // compiler.js - Part 3
-    // Macro transformations
-    // ============================================================
-
-    function replaceObfuscatedFlag(source) {
+    function replaceObfuscatedMacro(source) {
         return source.replace(
             /\bMV_OBFUSCATED\b/g,
             "true"
         );
     }
 
+    // ------------------------------------------------------------
+    // MV_LINE
+    //
+    // We resolve occurrences based on their
+    // source position.
+    // ------------------------------------------------------------
+
     function replaceLineMacro(source) {
-        const lines =
-            source.split(/\r?\n/);
-
-        for (let i = 0; i < lines.length; i++) {
-            lines[i] = lines[i].replace(
-                /\bMV_LINE\b/g,
-                String(i + 1)
-            );
-        }
-
-        return lines.join("\n");
-    }
-
-    function stripCompress(source) {
         return source.replace(
-            /\bMV_COMPRESS\s*\(\s*(["'][\s\S]*?["'])\s*\)/g,
-            "$1"
+            /\bMV_LINE\b/g,
+            function (_, offset) {
+                return String(
+                    VM.getLineNumber(
+                        source,
+                        offset
+                    )
+                );
+            }
         );
     }
 
-    function randomSeed() {
-        const chars =
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    // ------------------------------------------------------------
+    // MV_COMPRESS
+    //
+    // Current documented behavior is passthrough.
+    // ------------------------------------------------------------
 
-        let output = "";
+    function replaceCompress(source) {
+        return source.replace(
+            /\bMV_COMPRESS\s*\(/g,
+            ""
+        );
+    }
 
-        for (let i = 0; i < 24; i++) {
-            output += chars[
-                Math.floor(
-                    Math.random() * chars.length
-                )
-            ];
-        }
+    // The passthrough above intentionally only handles
+    // simple use cases. We don't attempt to reconstruct
+    // arbitrary nested Lua expressions here.
 
-        return output;
+    // ------------------------------------------------------------
+    // MV_CRASH
+    //
+    // Do not inject arbitrary runtime faults automatically.
+    // Leave the call intact for a later backend.
+    // ------------------------------------------------------------
+
+    function preserveRuntimeMacros(source) {
+        return source;
     }
 
     // ------------------------------------------------------------
-    // Compilation result
+    // Remove known ignored LPH macros
     // ------------------------------------------------------------
 
-    class CompilationResult {
-        constructor() {
-            this.ok = false;
+    function removeIgnoredMacros(source) {
+        let result = source;
 
-            this.source = "";
+        result =
+            result.replace(
+                /\bLPH_ENCNUM\s*\(/g,
+                "("
+            );
 
-            this.originalSource = "";
+        result =
+            result.replace(
+                /\bLPH_JIT\s*\(/g,
+                "("
+            );
 
-            this.bytecode = null;
+        result =
+            result.replace(
+                /\bLPH_NO_UPVALUES\s*\(/g,
+                "("
+            );
 
-            this.functions = [];
-
-            this.macros = [];
-
-            this.directives = [];
-
-            this.warnings = [];
-
-            this.errors = [];
-
-            this.stats = {
-                inputBytes: 0,
-                outputBytes: 0,
-                functionCount: 0,
-                macroCount: 0,
-                directiveCount: 0
-            };
-        }
+        return result;
     }
 
     // ------------------------------------------------------------
-    // Main compile function
+    // Compile
     // ------------------------------------------------------------
 
     function compile(source, options = {}) {
-        const result =
-            new CompilationResult();
-
-        if (typeof source !== "string") {
-            result.errors.push(
-                "Input must be a string containing Luau source."
-            );
-
-            return result;
-        }
-
-        result.originalSource = source;
-
-        result.stats.inputBytes =
-            new TextEncoder()
-                .encode(source)
-                .length;
-
-        try {
-            const tokens =
-                tokenize(source);
-
-            result.directives =
-                findDirectives(source);
-
-            result.macros =
-                findMacroCalls(
-                    source,
-                    tokens
-                );
-
-            result.functions =
-                findFunctions(
-                    source,
-                    tokens,
-                    result.directives
-                );
-
-            const context =
-                new VM.VMCompilerContext({
-                    seed:
-                        options.seed ||
-                        randomSeed()
-                });
-
-            for (
-                const fn of result.functions
-            ) {
-                context.addFunction(fn);
-            }
-
-            // ----------------------------------------------------
-            // Transform source
-            // ----------------------------------------------------
-
-            let output = source;
-
-            output =
-                normalizeAliases(output);
-
-            output =
-                replaceObfuscatedFlag(output);
-
-            output =
-                replaceLineMacro(output);
-
-            output =
-                stripCompress(output);
-
-            // ----------------------------------------------------
-            // Create VM bytecode metadata
-            // ----------------------------------------------------
-
-            result.bytecode =
-                context.build({
-                    compiler: "sytes",
-
-                    vmVersion:
-                        VM.VERSION,
-
-                    macros:
-                        result.macros.map(
-                            macro => ({
-                                name:
-                                    macro.normalizedName,
-
-                                line:
-                                    macro.line
-                            })
-                        ),
-
-                    directives:
-                        result.directives.map(
-                            directive => ({
-                                name:
-                                    directive.name,
-
-                                args:
-                                    directive.args,
-
-                                line:
-                                    directive.line
-                            })
-                        )
-                });
-
-            result.source =
-                output;
-
-            result.stats.outputBytes =
-                new TextEncoder()
-                    .encode(output)
-                    .length;
-
-            result.stats.functionCount =
-                result.functions.length;
-
-            result.stats.macroCount =
-                result.macros.length;
-
-            result.stats.directiveCount =
-                result.directives.length;
-
-            result.ok = true;
-
-            return result;
-
-        } catch (error) {
-
-            result.errors.push(
-                error instanceof Error
-                    ? error.message
-                    : String(error)
-            );
-
-            return result;
-        }
-                }
-
-
-     // ============================================================
-    // compiler.js - Part 4
-    // Public API and export
-    // ============================================================
-
-    function obfuscate(source, options = {}) {
-        const result =
-            compile(source, options);
-
-        if (!result.ok) {
-            throw new CompilerError(
-                result.errors.join("\n")
-            );
-        }
-
-        return result.source;
-    }
-
-    function analyze(source) {
         if (typeof source !== "string") {
             throw new TypeError(
-                "Source must be a string."
+                "source must be a string"
             );
         }
 
-        const tokens =
-            tokenize(source);
+        const seed =
+            options.seed ||
+            VM.createSeed();
+
+        const context =
+            VM.createCompilerContext({
+                seed
+            });
+
+        const preprocessed =
+            processDirectives(source);
+
+        let code =
+            preprocessed.code;
 
         const directives =
-            findDirectives(source);
+            preprocessed.directives;
 
-        const macros =
-            findMacroCalls(
-                source,
-                tokens
-            );
+        // --------------------------------------------------------
+        // Macro metadata
+        // --------------------------------------------------------
 
-        const functions =
-            findFunctions(
-                source,
-                tokens,
+        const functionMetadata =
+            buildFunctionMetadata(
                 directives
             );
 
+        for (const fn of functionMetadata) {
+            context.addFunction(fn);
+        }
+
+        // --------------------------------------------------------
+        // Basic compile-time macros
+        // --------------------------------------------------------
+
+        code =
+            replaceObfuscatedMacro(
+                code
+            );
+
+        code =
+            replaceLineMacro(
+                code
+            );
+
+        code =
+            removeIgnoredMacros(
+                code
+            );
+
+        code =
+            replaceCompress(
+                code
+            );
+
+        code =
+            preserveRuntimeMacros(
+                code
+            );
+
+        // --------------------------------------------------------
+        // Identifier mangling
+        // --------------------------------------------------------
+
+        let renameResult = {
+            code,
+            replacements: new Map()
+        };
+
+        if (
+            options.mangleIdentifiers !== false
+        ) {
+            const reserved =
+                new Set([
+                    "game",
+                    "workspace",
+                    "script",
+                    "shared",
+                    "_G",
+                    "Enum",
+                    "Instance",
+                    "Vector2",
+                    "Vector3",
+                    "CFrame",
+                    "Color3",
+                    "UDim2",
+                    "Players",
+                    "RunService",
+                    "ReplicatedStorage",
+                    "UserInputService",
+                    "task",
+                    "math",
+                    "string",
+                    "table",
+                    "coroutine",
+                    "debug",
+                    "os",
+                    "require",
+                    "print",
+                    "warn",
+                    "error",
+                    "pairs",
+                    "ipairs",
+                    "next",
+                    "select",
+                    "typeof",
+                    "tostring",
+                    "tonumber",
+                    "pcall",
+                    "xpcall",
+                    "getmetatable",
+                    "setmetatable",
+                    "rawget",
+                    "rawset"
+                ]);
+
+            renameResult =
+                renameIdentifiers(
+                    code,
+                    reserved,
+                    seed
+                );
+
+            code =
+                renameResult.code;
+        }
+
+        // --------------------------------------------------------
+        // Metadata
+        // --------------------------------------------------------
+
+        context.setMetadata(
+            "sourceInfo",
+            VM.getSourceInfo(source)
+        );
+
+        context.setMetadata(
+            "directives",
+            directives
+        );
+
+        context.setMetadata(
+            "identifierCount",
+            renameResult.replacements.size
+        );
+
+        context.setMetadata(
+            "virtualizedFunctions",
+            functionMetadata.filter(
+                fn => fn.virtualize
+            ).length
+        );
+
+        context.setMetadata(
+            "cffFunctions",
+            functionMetadata.filter(
+                fn =>
+                    fn.controlFlowFlatten
+            ).length
+        );
+
+        const build =
+            context.build();
+
         return {
-            tokens,
-            macros,
+            code,
+
+            metadata: build,
+
+            seed,
+
             directives,
-            functions
+
+            replacements:
+                Object.fromEntries(
+                    renameResult.replacements
+                )
         };
     }
 
     // ------------------------------------------------------------
-    // Export compiler
+    // Convenience API
     // ------------------------------------------------------------
 
-    global.SytesCompiler = {
-        VERSION: 2,
+    function obfuscate(
+        source,
+        options = {}
+    ) {
+        return compile(
+            source,
+            options
+        ).code;
+    }
 
-        TOKEN,
+    // ------------------------------------------------------------
+    // Public compiler
+    // ------------------------------------------------------------
 
-        CompilerError,
-
-        CompilationResult,
-
-        tokenize,
-
-        findMacroCalls,
-
-        findDirectives,
-
-        findFunctions,
-
-        normalizeAliases,
+    const Kn4ghtCompiler = {
+        VERSION: VM.VERSION,
 
         compile,
 
         obfuscate,
 
-        analyze
+        processDirectives,
+
+        buildFunctionMetadata,
+
+        renameIdentifiers
     };
+
+    global.Kn4ghtCompiler =
+        Kn4ghtCompiler;
+
+    // ------------------------------------------------------------
+    // CommonJS compatibility
+    // ------------------------------------------------------------
+
+    if (
+        typeof module !== "undefined" &&
+        module.exports
+    ) {
+        module.exports =
+            Kn4ghtCompiler;
+    }
 
 })(window);
