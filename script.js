@@ -1078,8 +1078,6 @@ if (vmTestButton) {
     );
 }
 
-alert("VM test script loaded");
-
 
 // ===============================
 // START
@@ -1093,3 +1091,5 @@ source.addEventListener(
 updateCounters();
 
 setStatus("");
+
+alert("VM test script loaded");
