@@ -1,6 +1,6 @@
 // ============================================================
 // KN4GHT VM COMPILER
-// Part 3 - Lexer + Expression Compiler
+// Luau VM bytecode generator
 // ============================================================
 
 class Kn4ghtCompiler {
@@ -11,52 +11,68 @@ class Kn4ghtCompiler {
         this.registerCount = 0;
     }
 
+
     // ========================================================
-    // CONSTANT TABLE
+    // CONSTANTS
     // ========================================================
 
     addConstant(value) {
-        const index = this.constants.indexOf(value);
 
-        if (index !== -1) {
-            return index;
+        const existing =
+            this.constants.indexOf(value);
+
+        if (existing !== -1) {
+            return existing;
         }
 
         this.constants.push(value);
 
-        return this.constants.length - 1;
+        // VM uses 1-based constant indexes
+        return this.constants.length;
     }
 
+
     // ========================================================
-    // REGISTER MANAGEMENT
+    // REGISTERS
     // ========================================================
 
     newRegister() {
-        const register = this.registerCount;
+
+        const register =
+            this.registerCount;
 
         this.registerCount++;
 
         return register;
     }
 
+
     // ========================================================
-    // EMIT INSTRUCTION
+    // EMIT
     // ========================================================
 
     emit(op, ...args) {
-        this.instructions.push({
-            op: op,
-            args: args
-        });
+
+        this.instructions.push([
+            op,
+            ...args
+        ]);
     }
 
+
     // ========================================================
-    // BASIC VALUES
+    // LOAD NUMBER
     // ========================================================
 
     compileNumber(value) {
-        const register = this.newRegister();
-        const constant = this.addConstant(Number(value));
+
+        const register =
+            this.newRegister();
+
+        const constant =
+            this.addConstant(
+                Number(value)
+            );
 
         this.emit(
             "LOADK",
@@ -66,10 +82,19 @@ class Kn4ghtCompiler {
 
         return register;
     }
+
+
+    // ========================================================
+    // LOAD STRING
+    // ========================================================
 
     compileString(value) {
-        const register = this.newRegister();
-        const constant = this.addConstant(value);
+
+        const register =
+            this.newRegister();
+
+        const constant =
+            this.addConstant(value);
 
         this.emit(
             "LOADK",
@@ -79,29 +104,40 @@ class Kn4ghtCompiler {
 
         return register;
     }
+
 
     // ========================================================
     // ARITHMETIC
     // ========================================================
 
-    compileBinary(operator, left, right) {
-
-        const destination = this.newRegister();
+    compileBinary(
+        operator,
+        left,
+        right
+    ) {
 
         const operations = {
+
             "+": "ADD",
             "-": "SUB",
             "*": "MUL",
             "/": "DIV"
+
         };
 
-        const opcode = operations[operator];
+        const opcode =
+            operations[operator];
 
         if (!opcode) {
+
             throw new Error(
-                "Unsupported operator: " + operator
+                "Unsupported operator: " +
+                operator
             );
         }
+
+        const destination =
+            this.newRegister();
 
         this.emit(
             opcode,
@@ -113,31 +149,43 @@ class Kn4ghtCompiler {
         return destination;
     }
 
+
     // ========================================================
     // BIT32
     // ========================================================
 
-    compileBit32(operation, left, right) {
+    compileBit32(
+        operation,
+        left,
+        right
+    ) {
 
         const operations = {
+
             band: "BAND",
             bor: "BOR",
             bxor: "BXOR",
             lshift: "LSHIFT",
             rshift: "RSHIFT",
             arshift: "ARSHIFT"
+
         };
 
-        const opcode = operations[operation];
+        const opcode =
+            operations[
+                operation.toLowerCase()
+            ];
 
         if (!opcode) {
+
             throw new Error(
                 "Unknown bit32 operation: " +
                 operation
             );
         }
 
-        const destination = this.newRegister();
+        const destination =
+            this.newRegister();
 
         this.emit(
             opcode,
@@ -148,6 +196,7 @@ class Kn4ghtCompiler {
 
         return destination;
     }
+
 
     compileBit32Not(source) {
 
@@ -163,328 +212,6 @@ class Kn4ghtCompiler {
         return destination;
     }
 
-    // ========================================================
-    // TOKENIZER
-    // ========================================================
-
-    tokenize(source) {
-
-        const tokens = [];
-
-        let position = 0;
-
-        while (position < source.length) {
-
-            const char = source[position];
-
-
-            // ------------------------------------------------
-            // Whitespace
-            // ------------------------------------------------
-
-            if (/\s/.test(char)) {
-                position++;
-                continue;
-            }
-
-
-            // ------------------------------------------------
-            // Comments
-            // ------------------------------------------------
-
-            if (
-                char === "-" &&
-                source[position + 1] === "-"
-            ) {
-
-                position += 2;
-
-                while (
-                    position < source.length &&
-                    source[position] !== "\n"
-                ) {
-                    position++;
-                }
-
-                continue;
-            }
-
-
-            // ------------------------------------------------
-            // Numbers
-            // ------------------------------------------------
-
-            if (/[0-9]/.test(char)) {
-
-                let value = "";
-
-                while (
-                    position < source.length &&
-                    /[0-9.]/.test(source[position])
-                ) {
-                    value += source[position];
-                    position++;
-                }
-
-                tokens.push({
-                    type: "number",
-                    value: value
-                });
-
-                continue;
-            }
-
-
-            // ------------------------------------------------
-            // Strings
-            // ------------------------------------------------
-
-            if (
-                char === '"' ||
-                char === "'"
-            ) {
-
-                const quote = char;
-
-                position++;
-
-                let value = "";
-
-                while (
-                    position < source.length &&
-                    source[position] !== quote
-                ) {
-
-                    if (
-                        source[position] === "\\" &&
-                        position + 1 < source.length
-                    ) {
-
-                        value += source[position];
-                        position++;
-
-                        value += source[position];
-                        position++;
-
-                    } else {
-
-                        value += source[position];
-                        position++;
-                    }
-                }
-
-                position++;
-
-                tokens.push({
-                    type: "string",
-                    value: value
-                });
-
-                continue;
-            }
-
-
-            // ------------------------------------------------
-            // Identifiers
-            // ------------------------------------------------
-
-            if (/[A-Za-z_]/.test(char)) {
-
-                let value = "";
-
-                while (
-                    position < source.length &&
-                    /[A-Za-z0-9_]/.test(
-                        source[position]
-                    )
-                ) {
-
-                    value += source[position];
-
-                    position++;
-                }
-
-                tokens.push({
-                    type: "identifier",
-                    value: value
-                });
-
-                continue;
-            }
-
-
-            // ------------------------------------------------
-            // Operators
-            // ------------------------------------------------
-
-            const twoCharacter =
-                source.slice(
-                    position,
-                    position + 2
-                );
-
-            if (
-                twoCharacter === "==" ||
-                twoCharacter === "~=" ||
-                twoCharacter === "<=" ||
-                twoCharacter === ">="
-            ) {
-
-                tokens.push({
-                    type: "operator",
-                    value: twoCharacter
-                });
-
-                position += 2;
-
-                continue;
-            }
-
-
-            // ------------------------------------------------
-            // Single character tokens
-            // ------------------------------------------------
-
-            if (
-                "+-*/%=<>()[],.".includes(char)
-            ) {
-
-                tokens.push({
-                    type:
-                        "+-*/%=<>".includes(char)
-                            ? "operator"
-                            : "symbol",
-
-                    value: char
-                });
-
-                position++;
-
-                continue;
-            }
-
-
-            // ------------------------------------------------
-            // Unknown character
-            // ------------------------------------------------
-
-            tokens.push({
-                type: "unknown",
-                value: char
-            });
-
-            position++;
-        }
-
-        return tokens;
-    }
-
-    // ========================================================
-    // SIMPLE EXPRESSION COMPILER
-    // ========================================================
-
-    compileExpression(source) {
-
-        const tokens =
-            this.tokenize(source);
-
-        if (tokens.length === 0) {
-            throw new Error(
-                "Empty expression"
-            );
-        }
-
-        return this.compileTokens(tokens);
-    }
-
-    // ========================================================
-    // TOKEN EXPRESSION HANDLER
-    // ========================================================
-
-    compileTokens(tokens) {
-
-        if (tokens.length === 1) {
-
-            const token = tokens[0];
-
-            if (token.type === "number") {
-                return this.compileNumber(
-                    token.value
-                );
-            }
-
-            if (token.type === "string") {
-                return this.compileString(
-                    token.value
-                );
-            }
-        }
-
-
-        // ----------------------------------------------------
-        // Simple binary expression
-        // ----------------------------------------------------
-
-        if (tokens.length === 3) {
-
-            const leftToken = tokens[0];
-            const operator = tokens[1];
-            const rightToken = tokens[2];
-
-            if (
-                operator.type === "operator" &&
-                ["+", "-", "*", "/"].includes(
-                    operator.value
-                )
-            ) {
-
-                const left =
-                    this.compileSingleToken(
-                        leftToken
-                    );
-
-                const right =
-                    this.compileSingleToken(
-                        rightToken
-                    );
-
-                return this.compileBinary(
-                    operator.value,
-                    left,
-                    right
-                );
-            }
-        }
-
-
-        throw new Error(
-            "Expression is not supported yet"
-        );
-    }
-
-    // ========================================================
-    // SINGLE TOKEN
-    // ========================================================
-
-    compileSingleToken(token) {
-
-        if (token.type === "number") {
-            return this.compileNumber(
-                token.value
-            );
-        }
-
-        if (token.type === "string") {
-            return this.compileString(
-                token.value
-            );
-        }
-
-        throw new Error(
-            "Unsupported token: " +
-            token.value
-        );
-    }
 
     // ========================================================
     // PRINT
@@ -498,17 +225,316 @@ class Kn4ghtCompiler {
         );
     }
 
+
     // ========================================================
-    // FINISH PROGRAM
+    // SIMPLE TEST EXPRESSION
+    // ========================================================
+
+    compileExpression(expression) {
+
+        const tokens =
+            this.tokenize(expression);
+
+        if (tokens.length === 0) {
+
+            throw new Error(
+                "Empty expression"
+            );
+        }
+
+
+        // Single number
+
+        if (
+            tokens.length === 1 &&
+            tokens[0].type === "number"
+        ) {
+
+            return this.compileNumber(
+                tokens[0].value
+            );
+        }
+
+
+        // Single string
+
+        if (
+            tokens.length === 1 &&
+            tokens[0].type === "string"
+        ) {
+
+            return this.compileString(
+                tokens[0].value
+            );
+        }
+
+
+        // Simple:
+        // number operator number
+
+        if (tokens.length === 3) {
+
+            const left =
+                this.compileToken(
+                    tokens[0]
+                );
+
+            const operator =
+                tokens[1];
+
+            const right =
+                this.compileToken(
+                    tokens[2]
+                );
+
+            return this.compileBinary(
+                operator.value,
+                left,
+                right
+            );
+        }
+
+
+        throw new Error(
+            "Expression not supported yet: " +
+            expression
+        );
+    }
+
+
+    // ========================================================
+    // TOKEN
+    // ========================================================
+
+    compileToken(token) {
+
+        if (
+            token.type === "number"
+        ) {
+
+            return this.compileNumber(
+                token.value
+            );
+        }
+
+
+        if (
+            token.type === "string"
+        ) {
+
+            return this.compileString(
+                token.value
+            );
+        }
+
+
+        throw new Error(
+            "Unsupported token: " +
+            token.value
+        );
+    }
+
+
+    // ========================================================
+    // TOKENIZER
+    // ========================================================
+
+    tokenize(source) {
+
+        const tokens = [];
+
+        let position = 0;
+
+
+        while (
+            position < source.length
+        ) {
+
+            const char =
+                source[position];
+
+
+            // Whitespace
+
+            if (
+                /\s/.test(char)
+            ) {
+
+                position++;
+
+                continue;
+            }
+
+
+            // Comments
+
+            if (
+                char === "-" &&
+                source[position + 1] === "-"
+            ) {
+
+                position += 2;
+
+                while (
+                    position < source.length &&
+                    source[position] !== "\n"
+                ) {
+
+                    position++;
+                }
+
+                continue;
+            }
+
+
+            // Number
+
+            if (
+                /[0-9]/.test(char)
+            ) {
+
+                let value = "";
+
+                while (
+                    position < source.length &&
+                    /[0-9.]/.test(
+                        source[position]
+                    )
+                ) {
+
+                    value +=
+                        source[position];
+
+                    position++;
+                }
+
+                tokens.push({
+                    type: "number",
+                    value: value
+                });
+
+                continue;
+            }
+
+
+            // String
+
+            if (
+                char === '"' ||
+                char === "'"
+            ) {
+
+                const quote =
+                    char;
+
+                position++;
+
+                let value = "";
+
+                while (
+                    position < source.length &&
+                    source[position] !== quote
+                ) {
+
+                    value +=
+                        source[position];
+
+                    position++;
+                }
+
+                position++;
+
+                tokens.push({
+                    type: "string",
+                    value: value
+                });
+
+                continue;
+            }
+
+
+            // Identifier
+
+            if (
+                /[A-Za-z_]/.test(char)
+            ) {
+
+                let value = "";
+
+                while (
+                    position < source.length &&
+                    /[A-Za-z0-9_]/.test(
+                        source[position]
+                    )
+                ) {
+
+                    value +=
+                        source[position];
+
+                    position++;
+                }
+
+                tokens.push({
+                    type: "identifier",
+                    value: value
+                });
+
+                continue;
+            }
+
+
+            // Operators
+
+            if (
+                "+-*/%".includes(char)
+            ) {
+
+                tokens.push({
+                    type: "operator",
+                    value: char
+                });
+
+                position++;
+
+                continue;
+            }
+
+
+            // Other symbols
+
+            tokens.push({
+                type: "symbol",
+                value: char
+            });
+
+            position++;
+        }
+
+
+        return tokens;
+    }
+
+
+    // ========================================================
+    // FINISH
     // ========================================================
 
     finish() {
 
-        this.emit("HALT");
+        this.emit(
+            "HALT"
+        );
 
         return {
-            constants: this.constants,
-            instructions: this.instructions
+
+            constants:
+                this.constants,
+
+            instructions:
+                this.instructions,
+
+            registers:
+                this.registerCount
         };
     }
 }
@@ -518,7 +544,10 @@ class Kn4ghtCompiler {
 // BROWSER EXPORT
 // ============================================================
 
-if (typeof window !== "undefined") {
+if (
+    typeof window !== "undefined"
+) {
+
     window.Kn4ghtCompiler =
         Kn4ghtCompiler;
 }
@@ -532,6 +561,7 @@ if (
     typeof module !== "undefined" &&
     module.exports
 ) {
+
     module.exports =
         Kn4ghtCompiler;
-                    }
+            }
