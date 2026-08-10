@@ -1031,6 +1031,53 @@ downloadBtn.addEventListener(
     }
 );
 
+const vmTestButton =
+    document.getElementById("vmTestButton");
+
+const vmTestOutput =
+    document.getElementById("vmTestOutput");
+
+if (vmTestButton) {
+
+    vmTestButton.addEventListener(
+        "click",
+        function () {
+
+            try {
+
+                const vm =
+                    new Kn4ghtVM();
+
+                vm.load(
+                    [10, 20],
+                    [
+                        ["LOADK", 0, 0],
+                        ["LOADK", 1, 1],
+                        ["ADD", 2, 0, 1],
+                        ["PRINT", 2],
+                        ["HALT"]
+                    ]
+                );
+
+                const registers =
+                    vm.run();
+
+                vmTestOutput.textContent =
+                    "VM works! Result: " +
+                    registers[2];
+
+            } catch (error) {
+
+                vmTestOutput.textContent =
+                    "VM Error: " +
+                    error.message;
+
+                console.error(error);
+            }
+        }
+    );
+}
+
 
 // ===============================
 // START
