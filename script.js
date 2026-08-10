@@ -1,872 +1,350 @@
+// ============================================================
+// SYTES OBFUSCATOR
+// script.js
+// Frontend controller
+// ============================================================
+
 "use strict";
 
-// ============================================================
-// SYTES OBFUSCATOR - script.js
-// ============================================================
+document.addEventListener("DOMContentLoaded", () => {
+    const input =
+        document.querySelector("#input") ||
+        document.querySelector("#inputCode") ||
+        document.querySelector("#source");
 
-const source = document.getElementById("source");
-const output = document.getElementById("output");
-const status = document.getElementById("status");
+    const output =
+        document.querySelector("#output") ||
+        document.querySelector("#outputCode") ||
+        document.querySelector("#result");
 
-const inputCounter = document.getElementById("inputCounter");
-const outputCounter = document.getElementById("outputCounter");
+    const obfuscateButton =
+        document.querySelector("#obfuscate") ||
+        document.querySelector("#obfuscateBtn") ||
+        document.querySelector("#run");
 
-const fileInput = document.getElementById("fileInput");
-const clearBtn = document.getElementById("clearBtn");
-const copyBtn = document.getElementById("copyBtn");
-const downloadBtn = document.getElementById("downloadBtn");
-const obfuscateBtn = document.getElementById("obfuscateBtn");
+    const clearButton =
+        document.querySelector("#clear") ||
+        document.querySelector("#clearBtn");
 
-const removeComments = document.getElementById("removeComments");
-const renameLocals = document.getElementById("renameLocals");
-const encodeStrings = document.getElementById("encodeStrings");
-const minify = document.getElementById("minify");
+    const copyButton =
+        document.querySelector("#copy") ||
+        document.querySelector("#copyBtn");
 
-// ============================================================
-// STATUS
-// ============================================================
+    const status =
+        document.querySelector("#status");
 
-function setStatus(message, type) {
-    if (!status) return;
+    // ----------------------------------------------------------
+    // Helpers
+    // ----------------------------------------------------------
 
-    status.textContent = message;
-    status.className = "status";
+    function setStatus(message, type = "normal") {
+        if (!status) return;
 
-    if (type) {
-        status.classList.add(type);
-    }
-}
+        status.textContent = message;
 
-// ============================================================
-// COUNTERS
-// ============================================================
-
-function updateCounters() {
-    if (inputCounter) {
-        inputCounter.textContent =
-            source.value.length + " characters";
+        status.dataset.status = type;
     }
 
-    if (outputCounter) {
-        outputCounter.textContent =
-            output.value.length + " characters";
-    }
-}
-
-// ============================================================
-// LOCAL VARIABLE RENAMING
-// ============================================================
-
-const protectedNames = new Set([
-    "print",
-    "warn",
-    "error",
-    "assert",
-    "pairs",
-    "ipairs",
-    "next",
-    "pcall",
-    "xpcall",
-    "select",
-    "tonumber",
-    "tostring",
-    "type",
-
-    "math",
-    "string",
-    "table",
-    "coroutine",
-    "debug",
-    "os",
-    "utf8",
-
-    "game",
-    "workspace",
-    "script",
-    "shared",
-
-    "Players",
-    "RunService",
-    "UserInputService",
-    "ReplicatedStorage",
-    "LocalPlayer"
-]);
-
-const luaKeywords = new Set([
-    "and",
-    "break",
-    "do",
-    "else",
-    "elseif",
-    "end",
-    "false",
-    "for",
-    "function",
-    "goto",
-    "if",
-    "in",
-    "local",
-    "nil",
-    "not",
-    "or",
-    "repeat",
-    "return",
-    "then",
-    "true",
-    "until",
-    "while"
-]);
-
-function generateName(index) {
-    const chars =
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    let value =
-        ((index + 1) * 2654435761) >>> 0;
-
-    let result = "_v";
-
-    for (let i = 0; i < 6; i++) {
-        value =
-            (value * 1664525 + 1013904223) >>> 0;
-
-        result += chars[
-            value % chars.length
-        ];
-    }
-
-    return result;
-}
-
-// ============================================================
-// SIMPLE TOKENIZER
-// ============================================================
-
-function tokenize(code) {
-    const tokens = [];
-    let i = 0;
-
-    while (i < code.length) {
-        const char = code[i];
-
-        if (/\s/.test(char)) {
-            const start = i;
-
-            while (
-                i < code.length &&
-                /\s/.test(code[i])
-            ) {
-                i++;
-            }
-
-            tokens.push({
-                type: "space",
-                value: code.slice(start, i)
-            });
-
-            continue;
-        }
-
-        if (code.startsWith("--[[", i)) {
-            const start = i;
-            const end =
-                code.indexOf("]]", i + 4);
-
-            if (end !== -1) {
-                i = end + 2;
-
-                tokens.push({
-                    type: "comment",
-                    value: code.slice(start, i)
-                });
-
-                continue;
-            }
-        }
-
-        if (code.startsWith("--", i)) {
-            const start = i;
-
-            while (
-                i < code.length &&
-                code[i] !== "\n"
-            ) {
-                i++;
-            }
-
-            tokens.push({
-                type: "comment",
-                value: code.slice(start, i)
-            });
-
-            continue;
-        }
-
-        if (
-            char === '"' ||
-            char === "'"
-        ) {
-            const quote = char;
-            const start = i;
-
-            i++;
-
-            while (i < code.length) {
-                if (code[i] === "\\") {
-                    i += 2;
-                    continue;
-                }
-
-                if (code[i] === quote) {
-                    i++;
-                    break;
-                }
-
-                i++;
-            }
-
-            tokens.push({
-                type: "string",
-                value: code.slice(start, i)
-            });
-
-            continue;
-        }
-
-        if (code.startsWith("[[", i)) {
-            const start = i;
-            const end =
-                code.indexOf("]]", i + 2);
-
-            if (end !== -1) {
-                i = end + 2;
-
-                tokens.push({
-                    type: "string",
-                    value: code.slice(start, i)
-                });
-
-                continue;
-            }
-        }
-
-        if (/[A-Za-z_]/.test(char)) {
-            const start = i;
-
-            i++;
-
-            while (
-                i < code.length &&
-                /[A-Za-z0-9_]/.test(code[i])
-            ) {
-                i++;
-            }
-
-            tokens.push({
-                type: "identifier",
-                value: code.slice(start, i)
-            });
-
-            continue;
-        }
-
-        if (/[0-9]/.test(char)) {
-            const start = i;
-
-            i++;
-
-            while (
-                i < code.length &&
-                /[A-Za-z0-9_.]/.test(code[i])
-            ) {
-                i++;
-            }
-
-            tokens.push({
-                type: "number",
-                value: code.slice(start, i)
-            });
-
-            continue;
-        }
-
-        tokens.push({
-            type: "symbol",
-            value: char
-        });
-
-        i++;
-    }
-
-    return tokens;
-}
-
-// ============================================================
-// RENAME LOCALS
-// ============================================================
-
-function renameLocalVariables(tokens) {
-    const names = [];
-
-    for (let i = 0; i < tokens.length; i++) {
-        if (
-            tokens[i].type !== "identifier" ||
-            tokens[i].value !== "local"
-        ) {
-            continue;
-        }
-
-        let j = i + 1;
-
-        while (
-            tokens[j] &&
-            tokens[j].type === "space"
-        ) {
-            j++;
-        }
-
-        if (
-            tokens[j] &&
-            tokens[j].type === "identifier" &&
-            tokens[j].value !== "function"
-        ) {
-            while (j < tokens.length) {
-                while (
-                    tokens[j] &&
-                    tokens[j].type === "space"
-                ) {
-                    j++;
-                }
-
-                if (
-                    !tokens[j] ||
-                    tokens[j].type !== "identifier"
-                ) {
-                    break;
-                }
-
-                const name =
-                    tokens[j].value;
-
-                if (
-                    !luaKeywords.has(name) &&
-                    !protectedNames.has(name) &&
-                    !names.includes(name)
-                ) {
-                    names.push(name);
-                }
-
-                j++;
-
-                while (
-                    tokens[j] &&
-                    tokens[j].type === "space"
-                ) {
-                    j++;
-                }
-
-                if (
-                    tokens[j] &&
-                    tokens[j].type === "symbol" &&
-                    tokens[j].value === ","
-                ) {
-                    j++;
-                    continue;
-                }
-
-                break;
-            }
-        }
-    }
-
-    const replacements = new Map();
-
-    names.forEach((name, index) => {
-        replacements.set(
-            name,
-            generateName(index)
-        );
-    });
-
-    return tokens.map(token => {
-        if (
-            token.type === "identifier" &&
-            replacements.has(token.value)
-        ) {
-            return {
-                type: "identifier",
-                value: replacements.get(token.value)
-            };
-        }
-
-        return token;
-    });
-}
-
-// ============================================================
-// STRING ENCODING
-// ============================================================
-
-function encodeLuaString(value) {
-    if (!value || value.startsWith("[[")) {
-        return value;
-    }
-
-    if (value.length < 2) {
-        return value;
-    }
-
-    const quote = value[0];
-
-    if (
-        quote !== "'" &&
-        quote !== '"'
-    ) {
-        return value;
-    }
-
-    const content =
-        value.slice(
-            1,
-            value.length - 1
-        );
-
-    let result = "";
-
-    for (let i = 0; i < content.length; i++) {
-        const character = content[i];
-
-        if (character === "\\") {
-            if (i + 1 < content.length) {
-                result +=
-                    "\\" +
-                    content[i + 1];
-
-                i++;
-                continue;
-            }
-        }
-
-        const code =
-            content.charCodeAt(i);
-
-        if (
-            code >= 32 &&
-            code <= 126 &&
-            character !== '"'
-        ) {
-            result += character;
-        } else {
-            result += "\\" + code;
-        }
-    }
-
-    return '"' + result + '"';
-}
-
-// ============================================================
-// MINIFY
-// ============================================================
-
-function minifyTokens(tokens) {
-    const result = [];
-
-    for (let i = 0; i < tokens.length; i++) {
-        const token = tokens[i];
-
-        if (token.type !== "space") {
-            result.push(token);
-            continue;
-        }
-
-        const previous =
-            result[result.length - 1];
-
-        const next =
-            tokens[i + 1];
-
-        if (!previous || !next) {
-            continue;
-        }
-
-        const previousNeedsSpace =
-            previous.type === "identifier" ||
-            previous.type === "number";
-
-        const nextNeedsSpace =
-            next.type === "identifier" ||
-            next.type === "number";
-
-        if (
-            previousNeedsSpace &&
-            nextNeedsSpace
-        ) {
-            result.push({
-                type: "space",
-                value: " "
-            });
-        }
-    }
-
-    return result;
-}
-
-// ============================================================
-// MAIN OBFUSCATOR
-// ============================================================
-
-function runObfuscator(code) {
-    if (!code.trim()) {
-        throw new Error(
-            "Paste Lua/Luau code first."
-        );
-    }
-
-    if (code.length > 1000000) {
-        throw new Error(
-            "Maximum source size is 1 MB."
-        );
-    }
-
-    let result = code;
-
-    // --------------------------------------------------------
-    // Connect to compiler.js
-    // --------------------------------------------------------
-
-    if (
-        !window.SytesCompiler ||
-        typeof window.SytesCompiler.compile !== "function"
-    ) {
-        throw new Error(
-            "SytesCompiler is not loaded. Check vm.js and compiler.js."
-        );
-    }
-
-    const compiled =
-        window.SytesCompiler.compile(
-            result
-        );
-
-    if (!compiled.ok) {
-        throw new Error(
-            compiled.errors.join("\n")
-        );
-    }
-
-    result =
-        compiled.source;
-
-    // --------------------------------------------------------
-    // Existing UI options
-    // --------------------------------------------------------
-
-    let tokens =
-        tokenize(result);
-
-    if (
-        removeComments &&
-        removeComments.checked
-    ) {
-        tokens =
-            tokens.filter(
-                token =>
-                    token.type !== "comment"
+    function getInput() {
+        if (!input) {
+            throw new Error(
+                "Input element was not found."
             );
+        }
+
+        return input.value || "";
     }
 
-    if (
-        renameLocals &&
-        renameLocals.checked
-    ) {
-        tokens =
-            renameLocalVariables(tokens);
+    function setOutput(value) {
+        if (!output) {
+            throw new Error(
+                "Output element was not found."
+            );
+        }
+
+        output.value = value;
     }
 
-    if (
-        encodeStrings &&
-        encodeStrings.checked
-    ) {
-        tokens =
-            tokens.map(token => {
-                if (
-                    token.type === "string"
-                ) {
-                    return {
-                        type: "string",
-                        value:
-                            encodeLuaString(
-                                token.value
-                            )
-                    };
-                }
+    function randomSeed() {
+        if (
+            window.Kn4ghtVM &&
+            typeof window.Kn4ghtVM.createSeed ===
+                "function"
+        ) {
+            return window.Kn4ghtVM.createSeed();
+        }
 
-                return token;
-            });
+        return (
+            Math.random()
+                .toString(36)
+                .slice(2) +
+            Date.now()
+                .toString(36)
+        );
     }
 
-    if (
-        minify &&
-        minify.checked
-    ) {
-        tokens =
-            minifyTokens(tokens);
+    // ----------------------------------------------------------
+    // Compiler check
+    // ----------------------------------------------------------
+
+    function getCompiler() {
+        if (
+            !window.Kn4ghtCompiler ||
+            typeof window.Kn4ghtCompiler.compile !==
+                "function"
+        ) {
+            throw new Error(
+                "Kn4ghtCompiler is unavailable. " +
+                "Make sure vm.js loads before compiler.js."
+            );
+        }
+
+        return window.Kn4ghtCompiler;
     }
 
-    return tokens
-        .map(token => token.value)
-        .join("");
-}
+    // ----------------------------------------------------------
+    // Obfuscate
+    // ----------------------------------------------------------
 
-// ============================================================
-// OBFUSCATE BUTTON
-// ============================================================
+    function runObfuscator() {
+        try {
+            const source =
+                getInput();
 
-if (obfuscateBtn) {
-    obfuscateBtn.addEventListener(
-        "click",
-        function () {
-            obfuscateBtn.disabled = true;
+            if (!source.trim()) {
+                setOutput("");
+                setStatus(
+                    "Enter Luau code first.",
+                    "error"
+                );
+                return;
+            }
 
-            obfuscateBtn.textContent =
-                "Processing...";
+            const compiler =
+                getCompiler();
 
             setStatus(
                 "Obfuscating...",
-                "loading"
+                "working"
             );
 
-            setTimeout(
-                function () {
-                    try {
-                        output.value =
-                            runObfuscator(
-                                source.value
-                            );
+            const result =
+                compiler.compile(
+                    source,
+                    {
+                        seed:
+                            randomSeed(),
 
-                        updateCounters();
-
-                        setStatus(
-                            "Obfuscation complete.",
-                            "success"
-                        );
-                    } catch (error) {
-                        output.value = "";
-
-                        updateCounters();
-
-                        setStatus(
-                            error.message,
-                            "error"
-                        );
+                        mangleIdentifiers:
+                            true
                     }
-
-                    obfuscateBtn.disabled =
-                        false;
-
-                    obfuscateBtn.textContent =
-                        "Obfuscate Lua";
-                },
-                30
-            );
-        }
-    );
-}
-
-// ============================================================
-// FILE UPLOAD
-// ============================================================
-
-if (fileInput) {
-    fileInput.addEventListener(
-        "change",
-        function (event) {
-            const file =
-                event.target.files[0];
-
-            if (!file) return;
+                );
 
             if (
-                !/\.(lua|luau|txt)$/i.test(
-                    file.name
-                )
+                !result ||
+                typeof result.code !==
+                    "string"
             ) {
-                setStatus(
-                    "Only Lua, Luau, or TXT files are supported.",
-                    "error"
+                throw new Error(
+                    "Compiler returned invalid output."
                 );
-
-                fileInput.value = "";
-
-                return;
             }
 
-            if (file.size > 1000000) {
-                setStatus(
-                    "File is larger than 1 MB.",
-                    "error"
-                );
+            setOutput(
+                result.code
+            );
 
-                fileInput.value = "";
+            setStatus(
+                "Obfuscation complete.",
+                "success"
+            );
 
-                return;
+        } catch (error) {
+            console.error(
+                "Sytes compiler error:",
+                error
+            );
+
+            setStatus(
+                error.message ||
+                "Obfuscation failed.",
+                "error"
+            );
+
+            if (output) {
+                output.value =
+                    "-- Compiler error:\n" +
+                    String(
+                        error.message ||
+                        error
+                    );
             }
-
-            const reader =
-                new FileReader();
-
-            reader.onload =
-                function () {
-                    source.value =
-                        String(
-                            reader.result || ""
-                        );
-
-                    updateCounters();
-
-                    setStatus(
-                        file.name + " loaded.",
-                        "success"
-                    );
-                };
-
-            reader.onerror =
-                function () {
-                    setStatus(
-                        "Could not read the file.",
-                        "error"
-                    );
-                };
-
-            reader.readAsText(file);
         }
-    );
-}
+    }
 
-// ============================================================
-// CLEAR
-// ============================================================
+    // ----------------------------------------------------------
+    // Clear
+    // ----------------------------------------------------------
 
-if (clearBtn) {
-    clearBtn.addEventListener(
-        "click",
-        function () {
-            source.value = "";
+    function clearAll() {
+        if (input) {
+            input.value = "";
+        }
+
+        if (output) {
             output.value = "";
+        }
 
-            if (fileInput) {
-                fileInput.value = "";
+        setStatus(
+            "Cleared.",
+            "normal"
+        );
+    }
+
+    // ----------------------------------------------------------
+    // Copy
+    // ----------------------------------------------------------
+
+    async function copyOutput() {
+        try {
+            if (!output) {
+                throw new Error(
+                    "Output element was not found."
+                );
             }
 
-            updateCounters();
-            setStatus("");
-        }
-    );
-}
+            const value =
+                output.value || "";
 
-// ============================================================
-// COPY
-// ============================================================
-
-if (copyBtn) {
-    copyBtn.addEventListener(
-        "click",
-        async function () {
-            if (!output.value) {
+            if (!value) {
                 setStatus(
                     "Nothing to copy.",
                     "error"
                 );
-
                 return;
             }
 
+            await navigator.clipboard.writeText(
+                value
+            );
+
+            setStatus(
+                "Output copied.",
+                "success"
+            );
+
+        } catch (error) {
+            console.error(
+                "Copy error:",
+                error
+            );
+
+            // Fallback for older/mobile browsers
             try {
-                await navigator.clipboard.writeText(
-                    output.value
-                );
-            } catch {
                 output.focus();
                 output.select();
 
                 document.execCommand(
                     "copy"
                 );
-            }
 
-            setStatus(
-                "Copied to clipboard.",
-                "success"
-            );
-        }
-    );
-}
-
-// ============================================================
-// DOWNLOAD
-// ============================================================
-
-if (downloadBtn) {
-    downloadBtn.addEventListener(
-        "click",
-        function () {
-            if (!output.value) {
                 setStatus(
-                    "Nothing to download.",
+                    "Output copied.",
+                    "success"
+                );
+
+            } catch {
+                setStatus(
+                    "Unable to copy output.",
                     "error"
                 );
-
-                return;
             }
+        }
+    }
 
-            const blob =
-                new Blob(
-                    [output.value],
-                    {
-                        type:
-                            "text/plain;charset=utf-8"
-                    }
-                );
+    // ----------------------------------------------------------
+    // Button events
+    // ----------------------------------------------------------
 
-            const url =
-                URL.createObjectURL(blob);
+    if (obfuscateButton) {
+        obfuscateButton.addEventListener(
+            "click",
+            runObfuscator
+        );
+    } else {
+        console.warn(
+            "Obfuscate button not found."
+        );
+    }
 
-            const link =
-                document.createElement("a");
+    if (clearButton) {
+        clearButton.addEventListener(
+            "click",
+            clearAll
+        );
+    }
 
-            link.href = url;
+    if (copyButton) {
+        copyButton.addEventListener(
+            "click",
+            copyOutput
+        );
+    }
 
-            link.download =
-                "sytes-protected.luau";
+    // ----------------------------------------------------------
+    // Keyboard shortcut
+    // Ctrl + Enter / Cmd + Enter
+    // ----------------------------------------------------------
 
-            document.body.appendChild(
-                link
-            );
+    document.addEventListener(
+        "keydown",
+        event => {
+            if (
+                (event.ctrlKey ||
+                    event.metaKey) &&
+                event.key === "Enter"
+            ) {
+                event.preventDefault();
 
-            link.click();
-
-            link.remove();
-
-            URL.revokeObjectURL(url);
-
-            setStatus(
-                "Downloaded sytes-protected.luau.",
-                "success"
-            );
+                runObfuscator();
+            }
         }
     );
-}
 
-// ============================================================
-// START
-// ============================================================
+    // ----------------------------------------------------------
+    // Public API
+    // ----------------------------------------------------------
 
-if (source) {
-    source.addEventListener(
-        "input",
-        updateCounters
+    window.SytesObfuscator = {
+        obfuscate:
+            runObfuscator,
+
+        clear:
+            clearAll,
+
+        copy:
+            copyOutput
+    };
+
+    // ----------------------------------------------------------
+    // Startup
+    // ----------------------------------------------------------
+
+    if (
+        window.Kn4ghtCompiler
+    ) {
+        setStatus(
+            "Compiler ready.",
+            "success"
+        );
+    } else {
+        setStatus(
+            "Compiler not loaded.",
+            "error"
+        );
+    }
+
+    console.log(
+        "Sytes Obfuscator frontend loaded."
     );
-}
-
-updateCounters();
-setStatus("");
+});
